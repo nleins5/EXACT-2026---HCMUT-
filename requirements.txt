@@ -11,6 +11,8 @@ langgraph
 llama-index
 llama-index-vector-stores-qdrant
 llama-index-embeddings-huggingface
+llama-index-retrievers-bm25
+llama-index-postprocessor-sbert-rerank
 qdrant-client
 
 # LLM & Embeddings

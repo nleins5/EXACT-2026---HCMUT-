@@ -8,7 +8,7 @@ llm:
   temperature: 0.0
 
 rag:
-  reranker: "bge-reranker-base"
+  reranker: "BAAI/bge-reranker-base"
 
 embedding:
   model_name: "BAAI/bge-m3"
