@@ -1,6 +1,10 @@
+import sys
 from pathlib import Path
+
+# Add project root to sys.path
+sys.path.append(str(Path(__file__).parents[2]))
+
 import os
-import logging
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
@@ -10,8 +14,14 @@ _PROJECT_ROOT = Path(__file__).parents[2]
 _SETTING_FILE = _PROJECT_ROOT / "config/setting.yaml"
 
 
+class LLMConfig(BaseModel):
+    model_path: str
+    temperature: float
+
+
 class EmbeddingConfig(BaseModel):
     model_name: str
+    base_url: str
 
 
 class RagConfig(BaseModel):
@@ -47,6 +57,7 @@ class Settings(BaseSettings):
     langsmith_api_key: str | None = Field(None, alias="LANGSMITH_API_KEY")
 
     app: AppConfig
+    llm: LLMConfig
     rag: RagConfig
     embedding: EmbeddingConfig
     retrieval: RetrievalConfig
@@ -84,6 +95,3 @@ try:
 except Exception as e:
     logger.error(f"Error while loading settings: {e}")
     raise
-
-if __name__ == "__main__":
-    logger.info("Running main scripts")

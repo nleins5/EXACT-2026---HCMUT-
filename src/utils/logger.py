@@ -36,6 +36,6 @@ def setup_logging(config_path: Path = _LOG_FILE) -> None:
 
 setup_logging()
 
-logger = logging.getLogger("Exact 2026")
+logger = logging.getLogger("exact")
 
 logging.info("Initialized logger successfully")

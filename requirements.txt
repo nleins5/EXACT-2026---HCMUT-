@@ -10,7 +10,12 @@ langgraph
 # LlamaIndex
 llama-index
 llama-index-vector-stores-qdrant
+llama-index-embeddings-huggingface
 qdrant-client
+
+# LLM & Embeddings
+llama-cpp-python
+sentence-transformers
 
 fastapi
 uvicorn

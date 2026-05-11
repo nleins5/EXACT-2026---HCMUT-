@@ -3,11 +3,16 @@ app:
   version: "1.0.0"
   debug: true
 
+llm:
+  model_path: "DeepSeek-R1-0528-Qwen3-8B.gguf"
+  temperature: 0.0
+
 rag:
   reranker: "bge-reranker-base"
 
 embedding:
-  model_name: "text-embedding-3-small"
+  model_name: "BAAI/bge-m3"
+  base_url: "http://localhost:11434"
 
 retrieval:
   threshold: 0.5
