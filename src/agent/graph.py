@@ -124,7 +124,7 @@ def run_pipeline(
     initial_state: AgentState = {
         "question": question,
         "premises": premises or [],
-        "task_type": "unknown",
+        "task_type": "logic",
         "intermediate_answer": {
             "context_rag": "",
             "context_code": "",

@@ -33,7 +33,7 @@ class AgentState(TypedDict):
     collection_name: str    # Tên bộ dữ liệu RAG cần truy vấn
     
     # Classification (Phân loại bài toán)
-    task_type: Literal["logic", "physics", "unknown"]
+    task_type: Literal["logic", "physics"]
     
     # Intermediate results (Kết quả trung gian)
     context: str            # Ngữ cảnh thô (ví dụ: text từ văn bản quy chế)
