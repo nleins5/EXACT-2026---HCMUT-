@@ -1,16 +1,22 @@
 from typing import TypedDict, Literal
 
 class FinalAnswer(TypedDict):
-    """Cấu trúc kết quả cuối cùng sau khi đã được định dạng."""
-    answer: str        # Đáp án rút gọn (ví dụ: A, B, 10.5)
-    reasoning: str     # Lập luận giải thích chi tiết
-    final_output: str  # Chuỗi văn bản đầy đủ để hiển thị cho người dùng
+    """Cấu trúc kết quả cuối cùng theo yêu cầu EXACT 2026."""
+    answer: str
+    explanation: str
+    fol: str             # Optional
+    cot: list[str]       # Optional
+    premises: list[str]  # Optional
+    confidence: float    # Optional
 
 class FallbackAnswer(TypedDict):
-    """Kết quả dự phòng từ LLM khi bộ giải (solver) gặp lỗi."""
+    """Kết quả dự phòng từ LLM."""
     answer: str
-    reasoning: str
-    final_output: str
+    explanation: str
+    fol: str
+    cot: list[str]
+    premises: list[str]
+    confidence: float
 
 class IntermediateAnswer(TypedDict):
     """Các kết quả trung gian trong quá trình xử lý của các Node."""

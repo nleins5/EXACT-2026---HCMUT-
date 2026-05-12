@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 from src.agent.state import AgentState
+from src.agent.schema import ExactResponse
 from src.utils.logger import logger
 from src.prompt.templete import PHYSICS_SYSTEM_PROMPT, PHYSICS_OUTPUT_PROMPT, PHYSICS_DIRECT_PROMPT
 
@@ -128,72 +129,55 @@ def physics_solver_node(state: AgentState) -> AgentState:
         return {"intermediate_answer": intermediate}
 
 
-def physics_explanation_node(state: AgentState) -> AgentState:
+def physics_explanation_node(state: AgentState) -> dict:
     """Node 4: Explanation & Formatting (Giải thích & Trình bày).
     
-    Chuyển đổi kết quả tính toán khô khan thành lời giải Chain-of-Thought (CoT) mượt mà.
-    Nếu bộ giải SymPy thất bại, node này sẽ lấy kết quả từ nhánh suy luận trực tiếp (fallback).
-
-    Args:
-        state: Trạng thái chứa kết quả tính toán và dự phòng.
-
-    Returns:
-        Trạng thái cập nhật đáp án cuối cùng (final_answer).
+    Sử dụng LLM với Structured Output để tổng hợp kết quả tính toán 
+    thành định dạng chuẩn của cuộc thi EXACT 2026.
     """
-    try:
-        from src.llm.factory import LLMFactory
-        llm = LLMFactory.create_client(purpose="reasoning").get_llm()
-
-        intermediate = state.get("intermediate_answer", {})
-        code_output = intermediate.get("code_output", "")
-        fallback = state.get("fallback_answer", {})
-
-        # Kiểm tra tính thành công của code output
-        success = "FINAL_ANSWER:" in code_output
-        
-        if success:
-            prompt = PHYSICS_OUTPUT_PROMPT.format(
-                question=state['question'],
-                code_output=code_output
-            )
-            from langchain_core.messages import HumanMessage
-            response = llm.invoke([HumanMessage(content=prompt)])
-            answer, reasoning = _parse_output(response.content, code_output)
-            logger.info("Đã tạo lời giải vật lý dựa trên kết quả Solver.")
-        else:
-            # Nhánh dự phòng khi Solver thất bại
-            answer = fallback.get("answer", "Không xác định")
-            reasoning = fallback.get("reasoning", "Bộ giải toán ký hiệu thất bại. Đang sử dụng suy luận trực tiếp từ LLM.")
-            logger.warning("Solver vật lý thất bại, sử dụng đáp án dự phòng từ LLM.")
-
-        final = {
-            "answer": answer,
-            "reasoning": reasoning,
-            "final_output": f"Lập luận:\n{reasoning}\n\nĐáp án cuối cùng:\n{answer}"
-        }
-        return {"final_answer": final}
-
-    except Exception as e:
-        logger.error(f"Tạo giải thích vật lý thất bại: {e}")
-        return state
-
-
-def physics_direct_node(state: AgentState) -> AgentState:
-    """Parallel Node: Direct LLM Reasoning (Suy luận trực tiếp - Nhánh song song).
+    intermediate = state.get("intermediate_answer", {})
+    code_output = intermediate.get("code_output", "")
     
-    Chạy song song với nhánh Formalizer/Solver để cung cấp một đáp án cơ sở.
-    Đóng vai trò là phương án dự phòng an toàn (Safety Net).
+    try:
+        from src.llm.factory import LLMFactory
+        llm_client = LLMFactory.create_client(purpose="summary")
+        structured_llm = llm_client.get_structured_llm(ExactResponse)
+        
+        prompt = PHYSICS_OUTPUT_PROMPT.format(
+            question=state["question"],
+            code_output=code_output
+        )
+        
+        # Gọi LLM và nhận trực tiếp object ExactResponse
+        response: ExactResponse = structured_llm.invoke(prompt)
+        
+        return {"final_answer": response.model_dump()}
+        
+    except Exception as e:
+        logger.error(f"Lỗi tại physics_explanation_node: {e}")
+        return {
+            "final_answer": {
+                "answer": "Error",
+                "explanation": f"Lỗi hệ thống: {e}",
+                "fol": "",
+                "cot": [],
+                "premises": [],
+                "confidence": 0.0
+            }
+        }
 
-    Args:
-        state: Trạng thái chứa câu hỏi và ngữ cảnh RAG.
 
-    Returns:
-        Trạng thái cập nhật kết quả dự phòng vào `fallback_answer`.
+def physics_direct_node(state: AgentState) -> dict:
+    """Nhánh song song: LLM suy luận trực tiếp (Dự phòng).
+    
+    Sử dụng LLM với Structured Output để giải bài toán trực tiếp 
+    không qua bộ giải SymPy.
     """
     try:
         from src.llm.factory import LLMFactory
-        llm = LLMFactory.create_client(purpose="reasoning").get_llm()
-
+        llm_client = LLMFactory.create_client(purpose="summary")
+        structured_llm = llm_client.get_structured_llm(ExactResponse)
+        
         context = state.get("context", "")
         context_block = f"\n\nKnowledge Context:\n{context}\n" if context else ""
 
@@ -201,71 +185,35 @@ def physics_direct_node(state: AgentState) -> AgentState:
             question=state["question"],
             context_block=context_block
         )
-        from langchain_core.messages import HumanMessage
-        response = llm.invoke([HumanMessage(content=prompt)])
         
-        answer, reasoning = _parse_direct_output(response.content)
-        logger.info("Đã tạo đáp án vật lý suy luận trực tiếp (nhánh song song).")
+        # Gọi LLM và nhận object ExactResponse
+        response: ExactResponse = structured_llm.invoke(prompt)
         
-        fallback = {
-            "answer": answer,
-            "reasoning": reasoning,
-            "final_output": f"Lập luận:\n{reasoning}\n\nĐáp án cuối cùng:\n{answer}"
-        }
-        return {"fallback_answer": fallback}
+        return {"fallback_answer": response.model_dump()}
+        
     except Exception as e:
-        logger.error(f"Nhánh suy luận vật lý trực tiếp thất bại: {e}")
-        return state
+        logger.error(f"Lỗi tại physics_direct_node: {e}")
+        return {
+            "fallback_answer": {
+                "answer": "Unknown",
+                "explanation": f"Lỗi suy luận trực tiếp: {e}",
+                "fol": "",
+                "cot": [],
+                "premises": [],
+                "confidence": 0.0
+            }
+        }
 
 
 def _extract_code(text: str) -> str:
-    """Extracts Python code block from LLM text."""
+    """Trích xuất mã Python từ phản hồi của LLM."""
     match = re.search(r"```python\n(.*?)```", text, re.DOTALL)
-    return match.group(1).strip() if match else text.strip()
+    if match:
+        return match.group(1).strip()
+    return text.strip()
 
 
 def _extract_final_answer(output: str) -> str:
-    """Extracts numeric answer from stdout."""
+    """Trích xuất đáp án từ stdout của solver."""
     match = re.search(r"FINAL_ANSWER:\s*(.+)", output)
     return match.group(1).strip() if match else "Unknown"
-
-
-def _parse_output(content: str, fallback_out: str) -> tuple[str, str]:
-    """Parses Answer and Reasoning from structured text."""
-    reasoning = ""
-    answer = ""
-
-    reasoning_match = re.search(r"Reasoning:\s*\n?(.*?)(?:\n\nFinal Answer:|\Z)", content, re.DOTALL)
-    answer_match = re.search(r"Final Answer:\s*\n?(.*)", content, re.DOTALL)
-
-    if reasoning_match:
-        reasoning = reasoning_match.group(1).strip()
-    else:
-        reasoning = content
-
-    if answer_match:
-        answer = answer_match.group(1).strip()
-    elif fallback_out:
-        answer = _extract_final_answer(fallback_out)
-
-    return answer, reasoning
-
-
-def _parse_direct_output(content: str) -> tuple[str, str]:
-    """Specialized parser for direct LLM reasoning output."""
-    reasoning = ""
-    answer = ""
-    
-    # Try to find Reasoning block
-    reasoning_match = re.search(r"Reasoning:\s*\n?(.*?)(?:\n\nFinal Answer:|\Z)", content, re.DOTALL)
-    if reasoning_match:
-        reasoning = reasoning_match.group(1).strip()
-    else:
-        reasoning = content
-
-    # Try to find Final Answer block
-    answer_match = re.search(r"Final Answer:\s*\n?(.*)", content, re.DOTALL)
-    if answer_match:
-        answer = answer_match.group(1).strip()
-    
-    return answer, reasoning
