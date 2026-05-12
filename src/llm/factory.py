@@ -16,6 +16,14 @@ class LLMFactory:
         model_path: str = None
     ) -> LlamaCppClient:
 
+        import os
+        use_mock = os.getenv("USE_MOCK_LLM", "false").lower() == "true"
+
+        if use_mock:
+            from src.llm.provider.mock_client import MockLLMClient
+            logger.warning("USING MOCK LLM CLIENT (Offline Mode)")
+            return MockLLMClient(model_path="mock", temperature=0.0)
+
         if model_path is None:
             model_path = settings.llm.model_path
 
@@ -42,7 +50,7 @@ class LLMFactory:
             logger.debug(
                 f"Creating Ollama LLM for {purpose.upper()} (model path: {model_path}, temp: {temperature})"
             )
-            return OllamaClient(model_path=model_path, temperature=temperature)
+            return LlamaCppClient(model_path=model_path, temperature=temperature) # Fix: using LlamaCppClient instead of non-existent OllamaClient
 
     @staticmethod
     def configure_llama_index_settings(provider: str = "ollama"):

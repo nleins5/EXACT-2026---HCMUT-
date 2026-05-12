@@ -1,0 +1,88 @@
+from typing import Any, Type, List
+from pydantic import BaseModel
+from src.llm.base import BaseLLM
+from src.utils.logger import logger
+
+class MockResponse:
+    def __init__(self, content: str):
+        self.content = content
+
+class MockLLM:
+    def __init__(self, temperature: float = 0.0):
+        self.temperature = temperature
+
+    def invoke(self, input_data: Any) -> MockResponse:
+        prompt = ""
+        if isinstance(input_data, list):
+            # Extract content from list of messages
+            prompt = " ".join([getattr(m, 'content', str(m)) for m in input_data])
+        else:
+            prompt = str(input_data)
+        
+        prompt_lower = prompt.lower()
+        
+        # Logic for Classifier
+        if "classify" in prompt_lower or "logic or physics" in prompt_lower:
+            if any(kw in prompt_lower for kw in ["capacitor", "resistor", "voltage", "circuit"]):
+                return MockResponse("physics")
+            return MockResponse("logic")
+            
+        # Logic for Z3 Formalizer
+        if "translate" in prompt_lower and "z3" in prompt_lower:
+            return MockResponse("""
+```python
+from z3 import *
+# Mock Z3 code
+s = Solver()
+# Premises mock
+P = Bool('P')
+Q = Bool('Q')
+s.add(Implies(P, Q))
+s.add(P)
+if s.check() == sat:
+    print("ANSWER: A")
+else:
+    print("ANSWER: Unknown")
+```
+""")
+
+        # Logic for Physics Formalizer (SymPy)
+        if "sympy" in prompt_lower or "calculate" in prompt_lower:
+             return MockResponse("""
+```python
+import sympy as sp
+# Mock SymPy code
+C, U = sp.symbols('C U')
+E = 0.5 * C * U**2
+result = E.subs({C: 100e-6, U: 30})
+print(f"RESULT: {result}")
+print(f"ANSWER: {result} J")
+```
+""")
+
+        # Logic for Explanation
+        if "explain" in prompt_lower or "reasoning" in prompt_lower:
+            return MockResponse("Answer: A\n\nReasoning: This is a mock reasoning based on the provided logic premises.")
+
+        # Default fallback
+        return MockResponse("Answer: Mocked Answer\n\nReasoning: Mocked reasoning because no LLM is available.")
+
+    def with_structured_output(self, schema: Type[BaseModel]) -> Any:
+        # Return a mock that returns an instance of the schema
+        class StructuredMock:
+            def invoke(self, input_data: Any) -> Any:
+                # Return default values for the schema
+                return schema.model_construct()
+        return StructuredMock()
+
+class MockLLMClient(BaseLLM):
+    def __init__(self, model_path: str = "mock", temperature: float = 0.0):
+        self.model_path = model_path
+        self.temperature = temperature
+        logger.info("Initialized MockLLMClient for offline testing.")
+
+    def get_llm(self, **kwargs) -> Any:
+        return MockLLM(temperature=self.temperature)
+
+    def get_structured_llm(self, output_schema: Type[BaseModel]) -> Any:
+        return MockLLM(temperature=self.temperature).with_structured_output(output_schema)
