@@ -126,22 +126,24 @@ def run_pipeline(
         "premises": premises or [],
         "task_type": "logic",
         "intermediate_answer": {
-            "context_rag": "",
-            "context_code": "",
             "generated_code": "",
             "code_output": "",
-            "reasoning": "",
-            "final_output": "",
         },
         "final_answer": {
             "answer": "",
-            "reasoning": "",
-            "final_output": "",
+            "explanation": "",
+            "fol": "",
+            "cot": [],
+            "premises": [],
+            "confidence": 0.0
         },
         "fallback_answer": {
             "answer": "",
-            "reasoning": "",
-            "final_output": "",
+            "explanation": "",
+            "fol": "",
+            "cot": [],
+            "premises": [],
+            "confidence": 0.0
         },
         "error": "",
         "collection_name": collection_name,
@@ -158,8 +160,11 @@ def run_pipeline(
     return {
         "task_type":    result.get("task_type"),
         "answer":       final.get("answer"),
-        "reasoning":    final.get("reasoning"),
-        "final_output": final.get("final_output"),
+        "explanation":  final.get("explanation"),
+        "fol":          final.get("fol"),
+        "cot":          final.get("cot"),
+        "premises":     final.get("premises"),
+        "confidence":   final.get("confidence"),
         "code":         intermediate.get("generated_code"),
         "code_output":  intermediate.get("code_output"),
     }

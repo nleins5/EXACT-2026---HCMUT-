@@ -1,65 +1,95 @@
-# Agent Module — EXACT 2026
+# EXACT 2026 Agent - LangGraph Pipeline
 
-Thành phần trung tâm điều phối toàn bộ pipeline xử lý bài toán Logic và Vật lý sử dụng **LangGraph**.
+Thư mục này chứa toàn bộ logic xử lý của Agent sử dụng LangGraph, được thiết kế để giải quyết các bài toán Logic và Vật lý theo yêu cầu của cuộc thi EXACT 2026.
 
 ## 🏗️ Kiến trúc Pipeline
 
-Pipeline được thiết kế theo dạng đồ thị có trạng thái (Stateful Graph) với cơ chế chạy song song (Parallel Execution) để tối ưu hóa độ chính xác và tốc độ.
+Hệ thống sử dụng một đồ thị trạng thái (StateGraph) để điều hướng dữ liệu qua các bước xử lý chuyên biệt. Điểm đặc trưng là khả năng **chạy song song (Parallel Fan-out)** giữa bộ giải ký hiệu (Symbolic Solver) và suy luận trực tiếp (Direct Reasoning).
 
-### Các luồng xử lý chính:
+### Sơ đồ luồng (Flowchart)
 
-1.  **Phân loại (Classification)**:
-    *   Dựa trên cấu trúc input (có giả thiết hay không) để xác định là `logic` hay `physics`.
-2.  **Nhánh Logic (Z3 Solver)**:
-    *   **Formalizer**: LLM dịch bài toán sang mã Python sử dụng thư viện Z3.
-    *   **Solver**: Thực thi mã code để tìm ra lời giải ký hiệu chính xác.
-    *   **Direct (Parallel)**: LLM suy luận trực tiếp để làm phương án dự phòng (fallback).
-3.  **Nhánh Vật lý (SymPy Solver)**:
-    *   **RAG**: Truy xuất công thức vật lý liên quan từ Vector Database.
-    *   **Formalizer**: LLM dịch bài toán và công thức sang mã Python SymPy.
-    *   **Solver**: Thực thi mã để tính toán kết quả số học kèm đơn vị SI.
-    *   **Direct (Parallel)**: LLM tự giải toán dựa trên kiến thức và ngữ cảnh RAG.
-
-## 📁 Cấu trúc thư mục
-
-*   `graph.py`: Định nghĩa cấu trúc đồ thị, các cạnh (edges) và điểm bắt đầu.
-*   `state.py`: Định nghĩa `AgentState` - Nguồn sự thật duy nhất (SSoT) được chia sẻ giữa các node.
-*   `nodes/`: Chứa logic xử lý chi tiết cho từng bước:
-    *   `classifier.py`: Logic phân loại và router.
-    *   `logic_node.py`: Xử lý bài toán Logic quy chế.
-    *   `physics_node.py`: Xử lý bài toán Vật lý điện học.
-
-## 🔄 Luồng dữ liệu (State Management)
-
-Toàn bộ pipeline sử dụng `AgentState` để truyền thông tin. Các node được thiết kế để chỉ trả về phần dữ liệu mà chúng cập nhật, giúp tránh xung đột khi thực thi song song.
-
-```python
-class AgentState(TypedDict):
-    question: str           # Câu hỏi đầu vào
-    premises: list[str]     # Giả thiết (nếu có)
-    task_type: str          # Loại bài toán (logic/physics)
-    intermediate_answer: ... # Kết quả từ bộ giải code (Z3/SymPy)
-    fallback_answer: ...     # Kết quả suy luận trực tiếp từ LLM
-    final_answer: ...        # Đáp án cuối cùng sau khi tổng hợp
+```mermaid
+graph TD
+    Start((Bắt đầu)) --> Classify[Classifier Node]
+    
+    %% Nhánh Logic
+    Classify -- "task_type: logic" --> LogicFormal[Logic Formalizer]
+    Classify -- "task_type: logic" --> LogicDirect[Logic Direct Reasoning]
+    
+    LogicFormal --> LogicSolver[Z3 Symbolic Solver]
+    
+    LogicSolver --> LogicExplain[Logic Explanation]
+    LogicDirect --> LogicExplain
+    
+    LogicExplain --> End((Kết thúc))
+    
+    %% Nhánh Vật lý
+    Classify -- "task_type: physics" --> PhysicsRAG[Physics RAG]
+    
+    PhysicsRAG --> PhysicsFormal[Physics Formalizer]
+    PhysicsRAG --> PhysicsDirect[Physics Direct Reasoning]
+    
+    PhysicsFormal --> PhysicsSolver[SymPy Numerical Solver]
+    
+    PhysicsSolver --> PhysicsExplain[Physics Explanation]
+    PhysicsDirect --> PhysicsExplain
+    
+    PhysicsExplain --> End
+    
+    style Classify fill:#f9f,stroke:#333,stroke-width:2px
+    style LogicSolver fill:#bbf,stroke:#333
+    style PhysicsSolver fill:#bfb,stroke:#333
+    style LogicDirect fill:#fbb,stroke:#333,stroke-dasharray: 5 5
+    style PhysicsDirect fill:#fbb,stroke:#333,stroke-dasharray: 5 5
 ```
 
-## 🚀 Cách sử dụng
+## 🧩 Các thành phần chính
 
-Sử dụng hàm `run_pipeline` trong `graph.py` để thực thi:
+### 1. Classifier Node
+Phân loại câu hỏi đầu vào thành `logic` hoặc `physics`. 
+- Đối với bài toán Logic: Hỗ trợ trích xuất các giả thiết (premises) nếu có (Type 1 input).
+
+### 2. Logic Branch (Nhánh Logic)
+- **Formalizer**: Dịch ngôn ngữ tự nhiên sang mã **Z3-Python**.
+- **Solver**: Thực thi mã Z3 trong môi trường sandbox an toàn để tìm đáp án logic.
+- **Direct Reasoning**: LLM suy luận trực tiếp (chạy song song) để đảm bảo luôn có kết quả dự phòng.
+
+### 3. Physics Branch (Nhánh Vật lý)
+- **RAG**: Truy xuất công thức và hằng số vật lý từ Vector DB.
+- **Formalizer**: Dịch bài toán sang mã **SymPy** để xử lý đơn vị và phương trình.
+- **Solver**: Tính toán con số cụ thể và đơn vị SI.
+- **Direct Reasoning**: LLM suy luận trực tiếp dựa trên kiến thức vật lý nội tại.
+
+### 4. Explanation Node (Structured Output)
+Sử dụng **Pydantic Schema (`ExactResponse`)** để ép LLM trả về dữ liệu chuẩn hóa:
+- `answer`: Đáp án cuối cùng (A, B, C...).
+- `explanation`: Giải thích ngắn gọn.
+- `fol`: Công thức Logic bậc một (nếu có).
+- `cot`: Các bước lập luận chi tiết (Chain-of-Thought).
+- `premises`: Các giả thiết đã sử dụng.
+- `confidence`: Độ tin cậy của kết quả (0.0 - 1.0).
+
+## 🚀 Cách sử dụng
 
 ```python
 from src.agent.graph import run_pipeline
 
+# Dành cho Logic (Type 1)
 result = run_pipeline(
-    question="Câu hỏi của bạn ở đây",
-    premises=["Giả thiết 1", "Giả thiết 2"]  # (Tùy chọn)
+    question="...",
+    premises=["..."]
 )
 
-print(result["answer"])
+# Dành cho Physics
+result = run_pipeline(
+    question="Calculate energy stored in C..."
+)
+
+print(result['answer'])
+print(result['explanation'])
 ```
 
-## 🛠️ Yêu cầu cài đặt bổ sung
-
-Để bộ giải mã (Solver) hoạt động, cần cài đặt các thư viện tính toán:
-*   `z3-solver`: Dùng cho nhánh Logic.
-*   `sympy`: Dùng cho nhánh Vật lý.
+## 🛠️ Yêu cầu môi trường
+- `z3-solver`: Bộ giải logic của Microsoft Research.
+- `sympy`: Thư viện toán học ký hiệu.
+- `langgraph`: Framework quản lý trạng thái agent.
