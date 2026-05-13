@@ -176,9 +176,3 @@ def _extract_code(text: str) -> str:
     if match:
         return match.group(1).strip()
     return text.strip()
-
-
-def _extract_answer_from_code_output(output: str) -> str:
-    """Trích xuất nhãn đáp án từ stdout của solver."""
-    match = re.search(r"ANSWER:\s*(.+)", output, re.IGNORECASE)
-    return match.group(1).strip() if match else "Unknown"

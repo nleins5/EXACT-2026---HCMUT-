@@ -7,28 +7,21 @@ from src.utils.logger import logger
 from src.prompt.templete import CLASSIFY_PROMPT
 
 
-def classify_node(state: AgentState) -> AgentState:
+def classify_node(state: AgentState) -> dict:
     """
     Phân loại câu hỏi dựa trên cấu trúc đầu vào của EXACT 2026:
     - Type 1 (Logic): Có đi kèm danh sách giả thiết (premises).
-    - Type 2 (Physics): Chỉ có câu hỏi (question).
-    
-    Args:
-        state: Trạng thái hiện tại của Agent.
-        
-    Returns:
-        Trạng thái đã được cập nhật trường task_type.
+    - Type 2: Không có premises (Có thể là Logic hoặc Physics).
     """
     premises = state.get("premises", [])
     
     if premises:
         task_type = "logic"
-        logger.info(f"Phát hiện {len(premises)} giả thiết, phân loại là: logic")
+        logger.info(f"Phát hiện {len(premises)} giả thiết, phân loại là: logic (Type 1)")
     else:
-        # Nếu không có premises, mặc định là physics (Type 2)
-        # Hoặc có thể dùng lại logic cũ nếu muốn chắc chắn hơn, nhưng theo yêu cầu là dựa vào input
-        task_type = "physics"
-        logger.info("Không có giả thiết đi kèm, phân loại là: physics")
+        # Nếu không có premises, dùng LLM để phân biệt Logic vs Physics
+        task_type = _llm_classify(state["question"])
+        logger.info(f"Phân loại bởi LLM: {task_type} (Type 2)")
     
     return {"task_type": task_type}
 
