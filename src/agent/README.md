@@ -1,95 +1,94 @@
-# EXACT 2026 Agent - LangGraph Pipeline
+# EXACT 2026 Agent
 
-Thư mục này chứa toàn bộ logic xử lý của Agent sử dụng LangGraph, được thiết kế để giải quyết các bài toán Logic và Vật lý theo yêu cầu của cuộc thi EXACT 2026.
+LangGraph pipeline cho cuộc thi EXACT 2026 (IEEE IJCNN 2026).
 
-## 🏗️ Kiến trúc Pipeline
-
-Hệ thống sử dụng một đồ thị trạng thái (StateGraph) để điều hướng dữ liệu qua các bước xử lý chuyên biệt. Điểm đặc trưng là khả năng **chạy song song (Parallel Fan-out)** giữa bộ giải ký hiệu (Symbolic Solver) và suy luận trực tiếp (Direct Reasoning).
-
-### Sơ đồ luồng (Flowchart)
+## LangGraph Flow
 
 ```mermaid
 graph TD
-    Start((Bắt đầu)) --> Classify[Classifier Node]
-    
-    %% Nhánh Logic
-    Classify -- "task_type: logic" --> LogicFormal[Logic Formalizer]
-    Classify -- "task_type: logic" --> LogicDirect[Logic Direct Reasoning]
-    
-    LogicFormal --> LogicSolver[Z3 Symbolic Solver]
-    
-    LogicSolver --> LogicExplain[Logic Explanation]
-    LogicDirect --> LogicExplain
-    
-    LogicExplain --> End((Kết thúc))
-    
-    %% Nhánh Vật lý
-    Classify -- "task_type: physics" --> PhysicsRAG[Physics RAG]
-    
-    PhysicsRAG --> PhysicsFormal[Physics Formalizer]
-    PhysicsRAG --> PhysicsDirect[Physics Direct Reasoning]
-    
-    PhysicsFormal --> PhysicsSolver[SymPy Numerical Solver]
-    
-    PhysicsSolver --> PhysicsExplain[Physics Explanation]
-    PhysicsDirect --> PhysicsExplain
-    
-    PhysicsExplain --> End
-    
-    style Classify fill:#f9f,stroke:#333,stroke-width:2px
-    style LogicSolver fill:#bbf,stroke:#333
-    style PhysicsSolver fill:#bfb,stroke:#333
-    style LogicDirect fill:#fbb,stroke:#333,stroke-dasharray: 5 5
-    style PhysicsDirect fill:#fbb,stroke:#333,stroke-dasharray: 5 5
+    START(("START")) --> classify
+
+    classify -->|logic| logic_formalizer
+    classify -->|logic| logic_direct
+    classify -->|physics| physics_rag
+
+    logic_formalizer --> logic_solver
+    logic_solver --> logic_explanation
+    logic_direct --> logic_explanation
+    logic_explanation --> END_NODE(("END"))
+
+    physics_rag --> physics_formalizer
+    physics_rag --> physics_direct
+    physics_formalizer --> physics_solver
+    physics_solver --> physics_explanation
+    physics_direct --> physics_explanation
+    physics_explanation --> END_NODE
 ```
 
-## 🧩 Các thành phần chính
+## Cấu trúc thư mục
 
-### 1. Classifier Node
-Phân loại câu hỏi đầu vào thành `logic` hoặc `physics`. 
-- Đối với bài toán Logic: Hỗ trợ trích xuất các giả thiết (premises) nếu có (Type 1 input).
-
-### 2. Logic Branch (Nhánh Logic)
-- **Formalizer**: Dịch ngôn ngữ tự nhiên sang mã **Z3-Python**.
-- **Solver**: Thực thi mã Z3 trong môi trường sandbox an toàn để tìm đáp án logic.
-- **Direct Reasoning**: LLM suy luận trực tiếp (chạy song song) để đảm bảo luôn có kết quả dự phòng.
-
-### 3. Physics Branch (Nhánh Vật lý)
-- **RAG**: Truy xuất công thức và hằng số vật lý từ Vector DB.
-- **Formalizer**: Dịch bài toán sang mã **SymPy** để xử lý đơn vị và phương trình.
-- **Solver**: Tính toán con số cụ thể và đơn vị SI.
-- **Direct Reasoning**: LLM suy luận trực tiếp dựa trên kiến thức vật lý nội tại.
-
-### 4. Explanation Node (Structured Output)
-Sử dụng **Pydantic Schema (`ExactResponse`)** để ép LLM trả về dữ liệu chuẩn hóa:
-- `answer`: Đáp án cuối cùng (A, B, C...).
-- `explanation`: Giải thích ngắn gọn.
-- `fol`: Công thức Logic bậc một (nếu có).
-- `cot`: Các bước lập luận chi tiết (Chain-of-Thought).
-- `premises`: Các giả thiết đã sử dụng.
-- `confidence`: Độ tin cậy của kết quả (0.0 - 1.0).
-
-## 🚀 Cách sử dụng
-
-```python
-from src.agent.graph import run_pipeline
-
-# Dành cho Logic (Type 1)
-result = run_pipeline(
-    question="...",
-    premises=["..."]
-)
-
-# Dành cho Physics
-result = run_pipeline(
-    question="Calculate energy stored in C..."
-)
-
-print(result['answer'])
-print(result['explanation'])
+```
+src/agent/
+├── __init__.py              # Export: run_pipeline, get_graph, build_graph
+├── graph.py                 # Định nghĩa LangGraph workflow (nodes, edges, routing)
+├── state.py                 # AgentState TypedDict — trạng thái chia sẻ giữa các node
+├── schema.py                # ExactResponse Pydantic model — format output cuộc thi
+├── README.md
+│
+├── nodes/                   # Các node xử lý trong pipeline
+│   ├── __init__.py
+│   ├── classifier.py        # Phân loại câu hỏi (logic/physics) + Router
+│   ├── logic_formalizer.py  # Dịch bài toán logic → mã Z3-Python
+│   ├── logic_solver.py      # Thực thi mã Z3 trong subprocess
+│   ├── logic_explanation.py # Tổng hợp kết quả Z3 → ExactResponse
+│   ├── logic_direct.py      # Fallback: LLM giải logic trực tiếp
+│   ├── physics_rag.py       # Truy xuất công thức vật lý từ Vector DB
+│   ├── physics_formalizer.py# Dịch bài toán vật lý → mã SymPy
+│   ├── physics_solver.py    # Thực thi mã SymPy trong subprocess
+│   ├── physics_explanation.py# Tổng hợp kết quả SymPy → ExactResponse
+│   └── physics_direct.py   # Fallback: LLM giải vật lý trực tiếp
+│
+└── prompts/                 # Prompt templates cho từng node
+    ├── __init__.py
+    ├── classify.py          # Prompt phân loại logic/physics
+    ├── logic.py             # Z3 system prompt, logic output, logic direct
+    └── physics.py           # SymPy system prompt, physics output, physics direct
 ```
 
-## 🛠️ Yêu cầu môi trường
-- `z3-solver`: Bộ giải logic của Microsoft Research.
-- `sympy`: Thư viện toán học ký hiệu.
-- `langgraph`: Framework quản lý trạng thái agent.
+## Cách hoạt động
+
+### 1. Nhận request
+
+`run_pipeline(question, premises, collection_name)` khởi tạo `AgentState` và gọi `graph.invoke()`.
+
+### 2. Phân loại (classify)
+
+- Nếu có `premises` → tự động phân loại là **logic**.
+- Nếu không có `premises` → dùng LLM phân loại (logic hoặc physics).
+
+### 3a. Nhánh Logic (chạy song song)
+
+| Nhánh chính | Nhánh dự phòng |
+|---|---|
+| `logic_formalizer` → `logic_solver` | `logic_direct` |
+
+- **Formalizer**: LLM dịch bài toán sang mã Z3-Python.
+- **Solver**: Chạy mã Z3 trong subprocess (timeout 30s), lấy kết quả.
+- **Direct (fallback)**: LLM giải trực tiếp không qua Z3.
+- Hai nhánh hội tụ tại `logic_explanation` → tổng hợp thành `ExactResponse`.
+
+### 3b. Nhánh Physics (chạy song song)
+
+| Nhánh chính | Nhánh dự phòng |
+|---|---|
+| `physics_rag` → `physics_formalizer` → `physics_solver` | `physics_rag` → `physics_direct` |
+
+- **RAG**: Truy xuất công thức vật lý từ Vector DB (hybrid search).
+- **Formalizer**: LLM dịch bài toán + context RAG sang mã SymPy.
+- **Solver**: Chạy mã SymPy trong subprocess (timeout 30s).
+- **Direct (fallback)**: LLM giải trực tiếp với context RAG.
+- Hai nhánh hội tụ tại `physics_explanation` → tổng hợp thành `ExactResponse`.
+
+### 4. Output
+
+Kết quả trả về gồm: `answer`, `explanation`, `fol`, `cot`, `premises`, `confidence`, `code`, `code_output`.

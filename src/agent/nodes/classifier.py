@@ -1,28 +1,26 @@
 """
-Classifier Node
-Phân loại câu hỏi thành: logic (quy chế) hoặc physics (vật lý)
+Classifier Node — Phân loại câu hỏi thành logic hoặc physics.
 """
 from src.agent.state import AgentState
 from src.utils.logger import logger
-from src.prompt.templete import CLASSIFY_PROMPT
+from src.agent.prompts.classify import CLASSIFY_PROMPT
 
 
 def classify_node(state: AgentState) -> dict:
     """
-    Phân loại câu hỏi dựa trên cấu trúc đầu vào của EXACT 2026:
-    - Type 1 (Logic): Có đi kèm danh sách giả thiết (premises).
-    - Type 2: Không có premises (Có thể là Logic hoặc Physics).
+    Phân loại câu hỏi:
+    - Type 1 (Logic): Có premises đi kèm.
+    - Type 2: Không có premises → dùng LLM phân loại.
     """
     premises = state.get("premises", [])
-    
+
     if premises:
         task_type = "logic"
-        logger.info(f"Phát hiện {len(premises)} giả thiết, phân loại là: logic (Type 1)")
+        logger.info(f"Phát hiện {len(premises)} giả thiết → logic (Type 1)")
     else:
-        # Nếu không có premises, dùng LLM để phân biệt Logic vs Physics
         task_type = _llm_classify(state["question"])
-        logger.info(f"Phân loại bởi LLM: {task_type} (Type 2)")
-    
+        logger.info(f"LLM phân loại: {task_type} (Type 2)")
+
     return {"task_type": task_type}
 
 
@@ -31,29 +29,26 @@ def _llm_classify(question: str) -> str:
     try:
         from src.llm.factory import LLMFactory
         llm = LLMFactory.create_client(purpose="reasoning")
-        
+
         prompt = CLASSIFY_PROMPT.format(question=question)
-        
         response = llm.get_llm().invoke(prompt)
         result = response.content.strip().lower()
-        
+
         if "physics" in result:
             return "physics"
         return "logic"
     except Exception as e:
-        logger.warning(f"Bộ phân loại LLM thất bại, mặc định chọn 'logic': {e}")
+        logger.warning(f"LLM classifier thất bại, mặc định 'logic': {e}")
         return "logic"
 
 
 def route_after_classify(state: AgentState) -> list[str]:
     """
-    Hàm Router — quyết định nhánh nào của graph sẽ được thực thi 
-    dựa trên kết quả phân loại (task_type).
-    Trả về danh sách các node để hỗ trợ chạy song song (fan-out).
+    Router — quyết định nhánh xử lý dựa trên task_type.
+    Trả về danh sách node để hỗ trợ fan-out (chạy song song).
     """
     t_type = state.get("task_type", "logic")
     if t_type == "physics":
         return ["physics_rag"]
-    
-    # Mặc định là logic, chạy song song 2 nhánh
+
     return ["logic_formalizer", "logic_direct"]
