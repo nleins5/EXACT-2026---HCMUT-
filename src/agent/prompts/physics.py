@@ -1,59 +1,66 @@
-"""Prompt templates cho Physics Nodes (Formalizer, Explanation, Direct)."""
+"""Prompt templates cho Physics Nodes (Formalizer, Explanation)."""
 
-PHYSICS_SYSTEM_PROMPT = """You are an expert physics solver. 
-Given a physics problem, generate Python code using sympy or standard math to compute the answer.
+PHYSICS_SYSTEM_PROMPT = """You solve text-based physics problems by emitting SymPy/Python code.
 
-Rules:
-1. Use sympy for symbolic math when needed.
-2. Show each calculation step in print statements.
-3. Always end with: print(f"FINAL_ANSWER: <numeric_value> <unit>")
-4. Use SI units.
+REQUIREMENTS
+1. Use sympy when symbolic math helps; show key steps via `print(...)`.
+2. Always end with `print(f"FINAL_ANSWER: <numeric> <SI unit>")`.
+3. Output ONE ```python ... ``` block. NO prose, NO <think> tag, NO explanation.
 
-Example:
+EXAMPLE
 ```python
 import sympy as sp
-# ... code ...
-print(f"FINAL_ANSWER: 10.5 J")
+R1, R2 = sp.Rational(30), sp.Rational(60)
+R = R1 * R2 / (R1 + R2)
+print(f"R_eq = {R} Ohm")
+print(f"FINAL_ANSWER: {float(R)} Ohm")
 ```
-
-Generate ONLY the Python code block."""
+"""
 
 PHYSICS_OUTPUT_PROMPT = """You are a Physics Problem Solver.
 
-Based on the problem and calculation output below, produce a structured response.
+The SymPy solver ran successfully. Use its verified output to produce the final structured response.
 
 Problem:
 {question}
 
-Calculation Output:
+Calculation Output (trusted):
 {code_output}
 
-Requirements:
+Return a structured response matching the schema:
+- answer: REQUIRED. Final numerical result with unit.
+- explanation: REQUIRED. Identify formula, substitute, compute.
+- fol: optional formal representation.
+- cot: optional list of reasoning steps.
+- premises: optional list of physics laws used.
+- confidence: optional float 0.0-1.0.
 
-- answer: Final numerical result.
-- explanation: Step-by-step physics solution:
-    1. Identify relevant formula.
-    2. Substitute values.
-    3. Perform calculation.
-- fol: (Optional) Formal representation if applicable.
-- cot: (Optional) Short reasoning steps.
-- premises: (Optional) List of physical laws used.
-- confidence: Float between 0.0 and 1.0.
-
-Return output strictly matching the ExactResponse schema.
+Trust the calculation output. No prose outside the schema.
 """
 
-PHYSICS_DIRECT_PROMPT = """You are an expert physics solver.
-Solve the following physics problem directly. Use SI units.
+PHYSICS_OUTPUT_ERROR_PROMPT = """You are a Physics Problem Solver working in fallback mode.
+
+The SymPy solver FAILED to execute the generated code. The code still reflects
+which formulas/quantities the model identified — read it as a structured hint
+and solve manually.
 
 Problem:
 {question}
 
 {context_block}
 
-Format your response EXACTLY as:
-Reasoning:
-<Step-by-step physics solution>
+Generated SymPy code (FAILED, do NOT execute, only read for hints):
+```python
+{generated_code}
+```
 
-Final Answer:
-<Numerical result with correct unit>"""
+Execution error:
+{error_message}
+
+Task:
+1. Read the broken code as a hint for relevant formulas/quantities.
+2. Solve the problem yourself; use SI units.
+3. Return the structured response (answer, explanation, fol?, cot?, premises?, confidence?).
+   Lower confidence since the solver failed. No prose outside the schema.
+   Do NOT mention "fallback mode".
+"""

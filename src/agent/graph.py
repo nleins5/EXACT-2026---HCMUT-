@@ -1,15 +1,13 @@
 """
-EXACT 2026 — Main LangGraph Pipeline
+EXACT 2026 — Main LangGraph Pipeline (Sequential, no parallel branches)
+
 Graph flow:
-    input -> classify -> {logic, physics}
-    
-    logic branch (Parallel):
-        classify -> logic_formalizer -> logic_solver -+
-        classify -> logic_direct ----+-> logic_explanation -> END
-    
-    physics branch (Parallel):
-        classify -> physics_rag -> physics_formalizer -> physics_solver -+
-        classify -> physics_rag -> physics_direct ------+-> physics_explanation -> END
+    classify
+      ├─ logic    → logic_formalizer  → logic_solver  → logic_explanation  → END
+      └─ physics  → physics_rag → physics_formalizer → physics_solver → physics_explanation → END
+
+Solvers set `intermediate_answer.code_error`. Explanation nodes branch on that flag
+internally to choose between SUCCESS and ERROR prompts (no extra LLM call).
 """
 from langgraph.graph import StateGraph, END
 from src.agent.state import AgentState
@@ -17,56 +15,52 @@ from src.agent.nodes.classifier import classify_node, route_after_classify
 from src.agent.nodes.logic_formalizer import logic_formalizer_node
 from src.agent.nodes.logic_solver import logic_solver_node
 from src.agent.nodes.logic_explanation import logic_explanation_node
-from src.agent.nodes.logic_direct import logic_direct_node
 from src.agent.nodes.physics_rag import physics_rag_node
 from src.agent.nodes.physics_formalizer import physics_formalizer_node
 from src.agent.nodes.physics_solver import physics_solver_node
 from src.agent.nodes.physics_explanation import physics_explanation_node
-from src.agent.nodes.physics_direct import physics_direct_node
 from src.utils.logger import logger
 
 
 def build_graph() -> StateGraph:
-    """Xây dựng và biên dịch pipeline LangGraph hoàn chỉnh."""
+    """Xây dựng và biên dịch pipeline LangGraph (sequential)."""
 
     workflow = StateGraph(AgentState)
 
     # ── Nodes ──
-    workflow.add_node("classify",            classify_node)
+    workflow.add_node("classify",             classify_node)
 
     workflow.add_node("logic_formalizer",     logic_formalizer_node)
     workflow.add_node("logic_solver",         logic_solver_node)
     workflow.add_node("logic_explanation",    logic_explanation_node)
-    workflow.add_node("logic_direct",         logic_direct_node)
 
     workflow.add_node("physics_rag",          physics_rag_node)
     workflow.add_node("physics_formalizer",   physics_formalizer_node)
     workflow.add_node("physics_solver",       physics_solver_node)
     workflow.add_node("physics_explanation",  physics_explanation_node)
-    workflow.add_node("physics_direct",       physics_direct_node)
 
     # ── Entry Point ──
     workflow.set_entry_point("classify")
 
-    # ── Conditional Routing ──
+    # ── Conditional Routing (single branch, not fan-out) ──
     workflow.add_conditional_edges(
         "classify",
         route_after_classify,
-        ["logic_formalizer", "logic_direct", "physics_rag"],
+        {
+            "logic_formalizer": "logic_formalizer",
+            "physics_rag":      "physics_rag",
+        },
     )
 
-    # ── Logic Branch ──
+    # ── Logic Branch (sequential) ──
     workflow.add_edge("logic_formalizer",  "logic_solver")
     workflow.add_edge("logic_solver",      "logic_explanation")
-    workflow.add_edge("logic_direct",      "logic_explanation")
     workflow.add_edge("logic_explanation", END)
 
-    # ── Physics Branch ──
-    workflow.add_edge("physics_rag",        "physics_formalizer")
-    workflow.add_edge("physics_rag",        "physics_direct")
-    workflow.add_edge("physics_formalizer", "physics_solver")
-    workflow.add_edge("physics_solver",     "physics_explanation")
-    workflow.add_edge("physics_direct",     "physics_explanation")
+    # ── Physics Branch (sequential) ──
+    workflow.add_edge("physics_rag",         "physics_formalizer")
+    workflow.add_edge("physics_formalizer",  "physics_solver")
+    workflow.add_edge("physics_solver",      "physics_explanation")
     workflow.add_edge("physics_explanation", END)
 
     return workflow.compile()
@@ -108,18 +102,16 @@ def run_pipeline(
         "premises": premises or [],
         "task_type": "logic",
         "intermediate_answer": {
+            "context_rag": "",
+            "context_code": "",
             "generated_code": "",
             "code_output": "",
+            "code_error": False,
+            "error_message": "",
+            "reasoning": "",
+            "final_output": "",
         },
         "final_answer": {
-            "answer": "",
-            "explanation": "",
-            "fol": "",
-            "cot": [],
-            "premises": [],
-            "confidence": 0.0,
-        },
-        "fallback_answer": {
             "answer": "",
             "explanation": "",
             "fol": "",
@@ -139,13 +131,15 @@ def run_pipeline(
     intermediate = result.get("intermediate_answer", {})
 
     return {
-        "task_type":   result.get("task_type"),
-        "answer":      final.get("answer"),
-        "explanation": final.get("explanation"),
-        "fol":         final.get("fol"),
-        "cot":         final.get("cot"),
-        "premises":    final.get("premises"),
-        "confidence":  final.get("confidence"),
-        "code":        intermediate.get("generated_code"),
-        "code_output": intermediate.get("code_output"),
+        "task_type":    result.get("task_type"),
+        "answer":       final.get("answer"),
+        "explanation":  final.get("explanation"),
+        "fol":          final.get("fol"),
+        "cot":          final.get("cot"),
+        "premises":     final.get("premises"),
+        "confidence":   final.get("confidence"),
+        "code":         intermediate.get("generated_code"),
+        "code_output":  intermediate.get("code_output"),
+        "code_error":   intermediate.get("code_error", False),
+        "error_message": intermediate.get("error_message", ""),
     }

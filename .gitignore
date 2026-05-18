@@ -6,3 +6,5 @@ logs/
 notebook/
 scratch/
 storage/
+models/
+*.gguf

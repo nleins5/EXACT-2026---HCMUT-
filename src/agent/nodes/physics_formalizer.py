@@ -1,9 +1,9 @@
 """
 Physics Formalizer Node — Dịch bài toán vật lý sang mã SymPy.
 """
-import re
 from src.agent.state import AgentState
 from src.utils.logger import logger
+from src.utils.code_extract import extract_python_code
 from src.agent.prompts.physics import PHYSICS_SYSTEM_PROMPT
 
 
@@ -25,9 +25,9 @@ Problem:
 
 Generate Python code using SymPy to solve this.
 Requirements:
-1. Define symbols for all physical quantities.
-2. Use SI units.
-3. Print steps and the final result as: print(f"FINAL_ANSWER: {{value}} {{unit}}")
+1. Define symbols for all physical quantities; use SI units.
+2. Print steps and final result as: print(f"FINAL_ANSWER: {{value}} {{unit}}")
+3. Output ONLY one ```python ... ``` fenced block. No prose, no <think>.
 """
         from langchain_core.messages import SystemMessage, HumanMessage
         response = llm.invoke([
@@ -35,8 +35,11 @@ Requirements:
             HumanMessage(content=user_prompt),
         ])
 
-        code = _extract_code(response.content)
-        logger.info("Đã dịch bài toán vật lý sang mã SymPy.")
+        code = extract_python_code(response.content)
+        if code:
+            logger.info(f"Đã dịch bài toán vật lý sang mã SymPy ({len(code)} chars).")
+        else:
+            logger.warning("Physics formalizer: không trích xuất được code Python từ LLM output.")
 
         intermediate = state.get("intermediate_answer", {})
         intermediate["generated_code"] = code
@@ -47,11 +50,3 @@ Requirements:
         intermediate = state.get("intermediate_answer", {})
         intermediate["generated_code"] = ""
         return {"intermediate_answer": intermediate, "error": str(e)}
-
-
-def _extract_code(text: str) -> str:
-    """Trích xuất mã Python từ phản hồi của LLM."""
-    match = re.search(r"```python\n(.*?)```", text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return text.strip()

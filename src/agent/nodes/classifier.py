@@ -42,13 +42,12 @@ def _llm_classify(question: str) -> str:
         return "logic"
 
 
-def route_after_classify(state: AgentState) -> list[str]:
+def route_after_classify(state: AgentState) -> str:
     """
     Router — quyết định nhánh xử lý dựa trên task_type.
-    Trả về danh sách node để hỗ trợ fan-out (chạy song song).
+    Trả về tên 1 node duy nhất (sequential, không fan-out).
     """
     t_type = state.get("task_type", "logic")
     if t_type == "physics":
-        return ["physics_rag"]
-
-    return ["logic_formalizer", "logic_direct"]
+        return "physics_rag"
+    return "logic_formalizer"

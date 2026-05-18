@@ -1,9 +1,9 @@
 """
 Logic Formalizer Node — Dịch bài toán logic sang mã Z3-Python.
 """
-import re
 from src.agent.state import AgentState
 from src.utils.logger import logger
+from src.utils.code_extract import extract_python_code
 from src.agent.prompts.logic import Z3_SYSTEM_PROMPT
 
 
@@ -24,7 +24,8 @@ def logic_formalizer_node(state: AgentState) -> dict:
 {state['question']}
 
 Translate the logic problem above into Python Z3 code.
-Ensure you define variables for each entity and add constraints for each premise.
+Define variables for each entity and add constraints for each premise.
+Output ONLY one ```python ... ``` fenced block. No prose, no <think>.
 """
 
         from langchain_core.messages import SystemMessage, HumanMessage
@@ -33,8 +34,11 @@ Ensure you define variables for each entity and add constraints for each premise
             HumanMessage(content=user_prompt),
         ])
 
-        code = _extract_code(response.content)
-        logger.info("Đã dịch bài toán sang mã Z3.")
+        code = extract_python_code(response.content)
+        if code:
+            logger.info(f"Đã dịch bài toán sang mã Z3 ({len(code)} chars).")
+        else:
+            logger.warning("Logic formalizer: không trích xuất được code Python từ LLM output.")
 
         intermediate = state.get("intermediate_answer", {})
         intermediate["generated_code"] = code
@@ -45,11 +49,3 @@ Ensure you define variables for each entity and add constraints for each premise
         intermediate = state.get("intermediate_answer", {})
         intermediate["generated_code"] = ""
         return {"intermediate_answer": intermediate, "error": str(e)}
-
-
-def _extract_code(text: str) -> str:
-    """Trích xuất mã Python từ phản hồi của LLM."""
-    match = re.search(r"```python\n(.*?)```", text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return text.strip()

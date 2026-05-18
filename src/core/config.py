@@ -17,6 +17,8 @@ _SETTING_FILE = _PROJECT_ROOT / "config/setting.yaml"
 class LLMConfig(BaseModel):
     model_path: str
     temperature: float
+    n_ctx: int = 4096
+    n_gpu_layers: int = 0
 
 
 class EmbeddingConfig(BaseModel):

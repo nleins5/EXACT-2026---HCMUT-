@@ -9,50 +9,47 @@ graph TD
     START(("START")) --> classify
 
     classify -->|logic| logic_formalizer
-    classify -->|logic| logic_direct
     classify -->|physics| physics_rag
 
     logic_formalizer --> logic_solver
     logic_solver --> logic_explanation
-    logic_direct --> logic_explanation
     logic_explanation --> END_NODE(("END"))
 
     physics_rag --> physics_formalizer
-    physics_rag --> physics_direct
     physics_formalizer --> physics_solver
     physics_solver --> physics_explanation
-    physics_direct --> physics_explanation
     physics_explanation --> END_NODE
 ```
+
+Pipeline **tuyến tính (sequential)** — không chạy song song để tránh load 2 LLM
+client cùng lúc (gây tràn RAM khi dùng GGUF local).
 
 ## Cấu trúc thư mục
 
 ```
 src/agent/
 ├── __init__.py              # Export: run_pipeline, get_graph, build_graph
-├── graph.py                 # Định nghĩa LangGraph workflow (nodes, edges, routing)
-├── state.py                 # AgentState TypedDict — trạng thái chia sẻ giữa các node
-├── schema.py                # ExactResponse Pydantic model — format output cuộc thi
+├── graph.py                 # Định nghĩa LangGraph workflow
+├── state.py                 # AgentState TypedDict
+├── schema.py                # ExactResponse Pydantic model
 ├── README.md
 │
 ├── nodes/                   # Các node xử lý trong pipeline
 │   ├── __init__.py
-│   ├── classifier.py        # Phân loại câu hỏi (logic/physics) + Router
-│   ├── logic_formalizer.py  # Dịch bài toán logic → mã Z3-Python
-│   ├── logic_solver.py      # Thực thi mã Z3 trong subprocess
-│   ├── logic_explanation.py # Tổng hợp kết quả Z3 → ExactResponse
-│   ├── logic_direct.py      # Fallback: LLM giải logic trực tiếp
-│   ├── physics_rag.py       # Truy xuất công thức vật lý từ Vector DB
-│   ├── physics_formalizer.py# Dịch bài toán vật lý → mã SymPy
-│   ├── physics_solver.py    # Thực thi mã SymPy trong subprocess
-│   ├── physics_explanation.py# Tổng hợp kết quả SymPy → ExactResponse
-│   └── physics_direct.py   # Fallback: LLM giải vật lý trực tiếp
+│   ├── classifier.py        # Phân loại logic/physics + Router (1 nhánh)
+│   ├── logic_formalizer.py  # Dịch logic → mã Z3-Python
+│   ├── logic_solver.py      # Thực thi Z3, set code_error flag
+│   ├── logic_explanation.py # Tổng hợp kết quả (2 prompt: success/error)
+│   ├── physics_rag.py       # Truy xuất công thức vật lý
+│   ├── physics_formalizer.py# Dịch vật lý → mã SymPy
+│   ├── physics_solver.py    # Thực thi SymPy, set code_error flag
+│   └── physics_explanation.py # Tổng hợp kết quả (2 prompt: success/error)
 │
-└── prompts/                 # Prompt templates cho từng node
+└── prompts/
     ├── __init__.py
-    ├── classify.py          # Prompt phân loại logic/physics
-    ├── logic.py             # Z3 system prompt, logic output, logic direct
-    └── physics.py           # SymPy system prompt, physics output, physics direct
+    ├── classify.py
+    ├── logic.py             # Z3_SYSTEM_PROMPT, LOGIC_OUTPUT_PROMPT, LOGIC_OUTPUT_ERROR_PROMPT
+    └── physics.py           # PHYSICS_SYSTEM_PROMPT, PHYSICS_OUTPUT_PROMPT, PHYSICS_OUTPUT_ERROR_PROMPT
 ```
 
 ## Cách hoạt động
@@ -66,29 +63,38 @@ src/agent/
 - Nếu có `premises` → tự động phân loại là **logic**.
 - Nếu không có `premises` → dùng LLM phân loại (logic hoặc physics).
 
-### 3a. Nhánh Logic (chạy song song)
+### 3a. Nhánh Logic (sequential)
 
-| Nhánh chính | Nhánh dự phòng |
-|---|---|
-| `logic_formalizer` → `logic_solver` | `logic_direct` |
+```
+logic_formalizer → logic_solver → logic_explanation
+```
 
 - **Formalizer**: LLM dịch bài toán sang mã Z3-Python.
-- **Solver**: Chạy mã Z3 trong subprocess (timeout 30s), lấy kết quả.
-- **Direct (fallback)**: LLM giải trực tiếp không qua Z3.
-- Hai nhánh hội tụ tại `logic_explanation` → tổng hợp thành `ExactResponse`.
+- **Solver**: Chạy mã Z3 trong subprocess (timeout 30s).
+  - Thành công → set `code_error=False`, lưu stdout vào `code_output`.
+  - Thất bại  → set `code_error=True`,  lưu stderr vào `error_message`.
+- **Explanation**:
+  - `code_error=False` → `LOGIC_OUTPUT_PROMPT` (tin tưởng output Z3).
+  - `code_error=True`  → `LOGIC_OUTPUT_ERROR_PROMPT` (đọc code lỗi như gợi ý,
+    để LLM tự suy luận ra đáp án — không gọi LLM lần thứ 2 để regenerate code).
 
-### 3b. Nhánh Physics (chạy song song)
+### 3b. Nhánh Physics (sequential)
 
-| Nhánh chính | Nhánh dự phòng |
-|---|---|
-| `physics_rag` → `physics_formalizer` → `physics_solver` | `physics_rag` → `physics_direct` |
+```
+physics_rag → physics_formalizer → physics_solver → physics_explanation
+```
 
 - **RAG**: Truy xuất công thức vật lý từ Vector DB (hybrid search).
 - **Formalizer**: LLM dịch bài toán + context RAG sang mã SymPy.
-- **Solver**: Chạy mã SymPy trong subprocess (timeout 30s).
-- **Direct (fallback)**: LLM giải trực tiếp với context RAG.
-- Hai nhánh hội tụ tại `physics_explanation` → tổng hợp thành `ExactResponse`.
+- **Solver**: Chạy mã SymPy (timeout 30s), set `code_error` flag.
+- **Explanation**: Cùng pattern 2-prompt như nhánh logic, có thêm RAG context khi lỗi.
 
 ### 4. Output
 
-Kết quả trả về gồm: `answer`, `explanation`, `fol`, `cot`, `premises`, `confidence`, `code`, `code_output`.
+`answer`, `explanation`, `fol`, `cot`, `premises`, `confidence`, `code`, `code_output`,
+`code_error`, `error_message`.
+
+## Constraint timing
+
+Cuộc thi giới hạn **60s/bài**. Pipeline hiện tại chỉ gọi LLM **2 lần/bài**
+(formalizer + explanation), không loop sinh code, đảm bảo fit trong budget.

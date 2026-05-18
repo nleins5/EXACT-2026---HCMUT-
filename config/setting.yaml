@@ -4,8 +4,10 @@ app:
   debug: true
 
 llm:
-  model_path: "DeepSeek-R1-0528-Qwen3-8B.gguf"
+  model_path: "models/deepseek-r1-0528-qwen3-8b.Q4_K_M.gguf"
   temperature: 0.0
+  n_ctx: 4096
+  n_gpu_layers: 0  # 0 = CPU only. -1 = full GPU. RTX 2050 4GB chi offload duoc ~20 layers.
 
 rag:
   reranker: "BAAI/bge-reranker-base"
