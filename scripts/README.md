@@ -1,239 +1,230 @@
 # EXACT 2026 — Scripts
 
-Bộ công cụ xử lý dữ liệu cho cuộc thi **EXACT 2026**, phục vụ fine-tune model `deepseek-ai/DeepSeek-R1-0528-Qwen3-8B`.
+Bộ công cụ Python phục vụ data pipeline cho cuộc thi **EXACT 2026**.
 
 ## Tổng quan
 
 ```
 scripts/
-├── build_final_dataset.py        # Pipeline chính (chạy 1 lệnh = xong)
-├── convert_physics_to_sympy.py   # Chuyển bài Vật lý → mã SymPy
-├── convert_logic_to_z3.py        # Chuyển bài Logic (FOLIO) → mã Z3
-└── README.md                     # File này
+├── README.md                       # File này
+├── convert_logic_to_z3.py          # Engine: FOL → Z3 Python code
+├── convert_physics_to_sympy.py     # Engine: LaTeX → SymPy Python code
+└── data_prep/                      # Pipeline build dataset fine-tune
+    ├── _common.py                  # Loaders + ChatML formatter + verify exec
+    ├── prepare_coder_dataset.py    # → data/finetune/coder.jsonl
+    └── prepare_instruct_dataset.py # → data/finetune/instruct.jsonl
 ```
+
+> [!NOTE]
+> Hai engine `convert_*` ban đầu được pipeline cũ (build_final_dataset.py) sử dụng.
+> Sau khi tái cấu trúc, chúng được `data_prep/_common.py` import lại làm engine
+> chuyển đổi mà không cần viết lại logic LaTeX/FOL parsing.
+
+---
 
 ## Quick Start
 
-```bash
-# Chạy full pipeline — tự động tạo dataset hoàn chỉnh
-python scripts/build_final_dataset.py
+Build cả 2 dataset cho 2 model riêng:
+
+```powershell
+# Coder dataset (Qwen2.5-Coder-7B-Instruct)
+.\venv\Scripts\python.exe -m scripts.data_prep.prepare_coder_dataset
+
+# Instruct dataset (Qwen2.5-7B-Instruct)
+.\venv\Scripts\python.exe -m scripts.data_prep.prepare_instruct_dataset
 ```
 
-Một lệnh duy nhất sẽ:
-
-1. **Generate SymPy** — chuyển 242 bài Vật lý → code SymPy, verify executable
-2. **Generate Z3** — tải FOLIO từ HuggingFace, chuyển FOL → code Z3
-3. **Load BTC** — đọc data chính thức ban tổ chức (Logic JSON + Physics CSV)
-4. **Filter & Merge** — lọc code chạy được, gộp tất cả nguồn
-5. **Export** — chia train/val (90/10), ghi ra `data/colab_ready/`
-
-**Output:**
-
-```
-data/colab_ready/
-├── train.jsonl    # ~2489 samples
-└── val.jsonl      # ~276 samples
-```
+Output → `data/finetune/`. Xem chi tiết tại `data/finetune/README.md`.
 
 ---
 
-## Chi tiết từng Script
+## Chi tiết từng module
 
-### 1. `build_final_dataset.py` — Pipeline chính
+### 1. `convert_logic_to_z3.py` — FOL → Z3 Engine
 
-**Mục đích:** Chạy toàn bộ pipeline từ đầu đến cuối, tạo ra dataset sẵn sàng fine-tune.
+**Mục đích:** Chuyển premises/conclusion ở dạng First-Order Logic (Unicode `∀ ∃ ¬ ∧ ∨ →`)
+thành script Python sử dụng `z3-solver` để kiểm tra entailment.
 
-**Cách dùng:**
+**Khi standalone:**
 
-```bash
-# Full pipeline (BTC + SymPy + Z3)
-python scripts/build_final_dataset.py
-
-# Chỉ dùng data BTC (không augment)
-python scripts/build_final_dataset.py --btc-only
-
-# Bỏ qua SymPy (chỉ BTC + Z3)
-python scripts/build_final_dataset.py --no-sympy
-
-# Bỏ qua Z3 (chỉ BTC + SymPy)
-python scripts/build_final_dataset.py --no-z3
+```powershell
+# Tải FOLIO từ HuggingFace + convert + ghi ra data/sft_dataset/
+.\venv\Scripts\python.exe scripts\convert_logic_to_z3.py
 ```
 
-**Pipeline flow:**
+**Khi import:** `data_prep/_common.py` gọi `fol_to_z3_code(...)` qua hàm helper
+`get_z3_engine()` để chuyển từng FOLIO sample → code Z3 thực thi được.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    build_final_dataset.py                    │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  Step 1: SymPy Generation                                   │
-│  ┌─────────────────────┐     ┌──────────────────────────┐   │
-│  │ electro_dataset.jsonl│────▶│ convert_physics_to_sympy │   │
-│  │ (242 bài vật lý)    │     │ .generate_sympy_code()   │   │
-│  └─────────────────────┘     └──────────┬───────────────┘   │
-│                                         │ 217 executable    │
-│  Step 2: Z3 Generation                  │                   │
-│  ┌─────────────────────┐     ┌──────────▼───────────────┐   │
-│  │ FOLIO (HuggingFace) │────▶│ convert_logic_to_z3      │   │
-│  │ (yale-nlp/FOLIO)    │     │ .fol_to_z3_code()        │   │
-│  └─────────────────────┘     └──────────┬───────────────┘   │
-│                                         │ 1204 records      │
-│  Step 3: BTC Official Data              │                   │
-│  ┌─────────────────────┐                │                   │
-│  │ Logic JSON (808 q)  │───┐            │                   │
-│  └─────────────────────┘   │            │                   │
-│  ┌─────────────────────┐   │            │                   │
-│  │ Physics CSV (1352 q)│───┤            │                   │
-│  └─────────────────────┘   │            │                   │
-│                            │            │                   │
-│  Step 4: Filter & Merge    ▼            ▼                   │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  exec() filter → merge → shuffle (seed=3407)       │    │
-│  └──────────────────────┬──────────────────────────────┘    │
-│                         │                                   │
-│  Step 5: Export         ▼                                   │
-│  ┌──────────────────────────────┐                           │
-│  │ data/colab_ready/train.jsonl │  ~2489 samples            │
-│  │ data/colab_ready/val.jsonl   │  ~276 samples             │
-│  └──────────────────────────────┘                           │
-└─────────────────────────────────────────────────────────────┘
+**Conversion patterns:**
+
+| FOL Unicode | Z3 Python                       |
+| ----------- | ------------------------------- |
+| `∀x P(x)`   | `ForAll(x, P(x))`               |
+| `∃x P(x)`   | `Exists(x, P(x))`               |
+| `¬P(x)`     | `Not(P(x))`                     |
+| `P → Q`     | `Implies(P, Q)`                 |
+| `P ∧ Q`     | `And(P, Q)`                     |
+| `P ∨ Q`     | `Or(P, Q)`                      |
+| Predicate   | `Function("P", Entity, BoolSort())` |
+
+Engine tự động detect predicates (uppercase) và constants (lowercase),
+khai báo sort `Entity` và emit `Solver()` + `s.add(...)` block đầy đủ.
+
+### 2. `convert_physics_to_sympy.py` — LaTeX → SymPy Engine
+
+**Mục đích:** Chuyển biểu thức LaTeX (`\frac{}{}`, `\sqrt{}`, `^{}`, trig, Greek)
+thành Python expression dùng được với `sympy`.
+
+**Khi standalone:**
+
+```powershell
+# Generate SymPy code cho 242 bài điện từ
+.\venv\Scripts\python.exe scripts\convert_physics_to_sympy.py --generate --count 242
+
+# Verify code có chạy không (exec all)
+.\venv\Scripts\python.exe scripts\convert_physics_to_sympy.py --verify
+
+# Phân tích loại lỗi (SyntaxError, TypeError, ...)
+.\venv\Scripts\python.exe scripts\convert_physics_to_sympy.py --analyze
+
+# Preview 5 record đầu
+.\venv\Scripts\python.exe scripts\convert_physics_to_sympy.py --preview 5
 ```
 
-**Output format** (mỗi dòng JSONL):
+**Khi import:** `data_prep/_common.py` gọi `generate_sympy_code(record)` qua
+`get_sympy_engine()` để sinh code SymPy verification stub.
 
-```json
-{
-  "conversations": [
-    {"role": "system", "content": "You are an expert educational AI..."},
-    {"role": "user", "content": "[LOGIC PROBLEM]\nPremises:\n1. ..."},
-    {"role": "assistant", "content": "<think>\n...\n</think>\n<answer>\n...\n</answer>"}
-  ]
-}
-```
+**Conversion patterns:**
+
+| LaTeX                      | SymPy Python              |
+| -------------------------- | ------------------------- |
+| `\frac{a}{b}`              | `((a)/(b))`               |
+| `\sqrt{x}`                 | `sqrt(x)`                 |
+| `x^{2}`, `x^2`             | `x**(2)`, `x**2`          |
+| `\sin x`                   | `sin(x)`                  |
+| `\pi`, `\epsilon_0`        | `pi`, `epsilon_0`         |
+| `\cdot`, `\times`          | `*`                       |
+| `\text{...}`               | string literal            |
+| `2x`, `3y` (implicit mult) | `2*x`, `3*y`              |
+
+Engine có heuristic skip những expression không convert được
+(matrices, aligned environments, comparison operators) → trả `None`.
+
+### 3. `data_prep/` — Pipeline build dataset fine-tune
+
+Sinh ra 2 bộ ChatML JSONL phục vụ 2 model fine-tune:
+
+| Output                | Model fine-tune                  | Vai trò runtime                      |
+| --------------------- | -------------------------------- | ------------------------------------ |
+| `coder.jsonl`         | Qwen2.5-Coder-7B-Instruct        | Sinh code Z3/SymPy                   |
+| `coder.eval.jsonl`    | (10% validation split)           |                                      |
+| `instruct.jsonl`      | Qwen2.5-7B-Instruct              | Sinh `ExactResponse` JSON             |
+| `instruct.eval.jsonl` | (10% validation split)           |                                      |
+
+#### `_common.py`
+
+Module chung cho cả 2 prep scripts:
+
+- **Dataclasses**: `LogicQA`, `PhysicsQA`, `ElectroSample`, `FolioSample`
+- **Loaders**:
+  - `load_btc_logic()` — đọc BTC Logic JSON (411 record / 808 Q-A pairs)
+  - `load_btc_physics()` — đọc BTC Physics CSV với Q19 filter (1,352 rows)
+  - `load_electro_sympy()` — đọc electro + tự generate SymPy nếu thiếu
+  - `load_folio()` — đọc yale-nlp/FOLIO qua `datasets`, fallback graceful nếu offline
+- **Converters**: `folio_to_z3()`, `get_sympy_engine()`
+- **Verify**: `verify_python(code)` chạy `exec()` trong namespace cô lập, capture stdout/stderr
+- **ChatML**: `chatml(system, user, assistant, meta)` → dict `{messages, meta}`
+- **I/O**: `write_jsonl()`, `train_val_split()`, `write_stats_md()`
+
+#### `prepare_coder_dataset.py`
+
+Build `coder.jsonl` từ 3 nguồn:
+
+| Source        | Records | Conversion                          |
+| ------------- | ------: | ----------------------------------- |
+| `folio`       |    ~200 | FOL → Z3 (filter exec) |
+| `btc_physics` |  ~1,100 | LaTeX answer → SymPy stub           |
+| `electro`     |    ~220 | Pre-existing SymPy code             |
+
+Mọi record đều phải pass `exec()` filter để lọc code không chạy được.
+
+**Flags:**
+- `--no-verify` — bỏ exec filter (nhanh ~5x, dùng khi debug)
+- `--val-ratio 0.05` — đổi tỷ lệ val (default 0.10)
+- `--no-electro` — bỏ nguồn electro
+- `--seed 3407` — đổi shuffle seed
+- `--output-dir DIR` — đổi thư mục output (default `data/finetune/`)
+
+#### `prepare_instruct_dataset.py`
+
+Build `instruct.jsonl` từ cùng 3 nguồn nhưng target là JSON `ExactResponse`.
+Mỗi record có 2 nhánh prompt:
+
+- **success branch**: code chạy ok → confidence ~0.9, explanation tự nhiên
+- **error branch**:   code fail → confidence ~0.6, explanation acknowledge solver fail
+
+→ Mirror chính xác 2-prompt strategy trong `src/agent/nodes/*_explanation.py`.
+
+**Flags (ngoài flags chung):**
+- `--error-ratio 0.30` — tỷ lệ ép route qua nhánh error (default 0.30)
+
+> [!NOTE]
+> Tỷ lệ branch thực tế của instruct dataset là ~58% error / 42% success. Đó là vì
+> các record FOLIO thực sự fail khi chạy Z3 (~44%) cũng được tự động đánh nhãn
+> error, cộng dồn với forced 30% → tổng ~58%. Đây là hành vi mong muốn vì runtime
+> cũng sẽ gặp các trường hợp solver fail tương tự.
 
 ---
-
-### 2. `convert_physics_to_sympy.py` — Chuyển Vật lý → SymPy
-
-**Mục đích:** Chuyển đổi bài toán Vật lý (điện từ) từ LaTeX sang mã SymPy executable. Được `build_final_dataset.py` gọi tự động, nhưng cũng có thể chạy standalone để debug/preview.
-
-**Cách dùng (standalone):**
-
-```bash
-# Tạo mã SymPy cho tất cả 242 bài
-python scripts/convert_physics_to_sympy.py --generate --count 242
-
-# Kiểm tra bao nhiêu bài chạy được
-python scripts/convert_physics_to_sympy.py --verify
-
-# Phân tích lỗi (phân loại pattern)
-python scripts/convert_physics_to_sympy.py --analyze
-
-# Xem trước 5 bài đầu
-python scripts/convert_physics_to_sympy.py --preview 5
-```
-
-**Các mode:**
-
-| Mode | Mô tả |
-|------|--------|
-| `--generate` | Đọc `electro_dataset.jsonl`, chuyển LaTeX → SymPy, ghi ra `electro_sympy_dataset.jsonl` |
-| `--verify` | Chạy `exec()` từng record, báo cáo tỷ lệ pass/fail |
-| `--analyze` | Phân loại lỗi (SyntaxError, TypeError, ...) theo pattern |
-| `--preview N` | In ra N bài đầu tiên để kiểm tra bằng mắt |
-
-**Input/Output:**
-
-```
-Input:  data/collected/electro_dataset.jsonl       (242 bài từ textbook điện từ)
-Output: data/collected/electro_sympy_dataset.jsonl  (242 bài + sympy_verify_code)
-```
-
-**Conversion engine:**
-- Heuristic LaTeX → SymPy (regex-based)
-- Xử lý: `\frac{}{}`, `\sqrt{}`, `^{}`, trig functions, Greek symbols, implicit multiplication
-- Tự skip biểu thức quá phức tạp (aligned environments, matrices, ...)
-
----
-
-### 3. `convert_logic_to_z3.py` — Chuyển Logic (FOLIO) → Z3
-
-**Mục đích:** Tải dataset FOLIO (First-Order Logic) từ HuggingFace, chuyển mỗi bài thành script Z3 theorem prover. Được `build_final_dataset.py` gọi tự động, nhưng cũng có thể chạy standalone.
-
-**Cách dùng (standalone):**
-
-```bash
-# Tạo Z3 dataset (tải FOLIO + convert)
-python scripts/convert_logic_to_z3.py
-
-# Chỉ định output directory khác
-python scripts/convert_logic_to_z3.py --output-dir ./my_output
-```
-
-**Input/Output:**
-
-```
-Input:  yale-nlp/FOLIO (HuggingFace, tự download + cache)
-Output: data/sft_dataset/train.jsonl  (Alpaca format, ~1083 records)
-        data/sft_dataset/val.jsonl    (Alpaca format, ~121 records)
-```
-
-**Conversion engine:**
-- FOL → Z3 Python: `∀x` → `ForAll(x, ...)`, `∃x` → `Exists(x, ...)`
-- Operators: `¬` → `Not()`, `∧` → `And()`, `∨` → `Or()`, `→` → `Implies()`
-- Auto-detect predicates (uppercase) và constants (lowercase)
-- Check entailment: nếu `Not(conclusion)` là `unsat` → True, etc.
-
----
-
-## Nguồn dữ liệu
-
-| Nguồn | Loại | Số lượng | Mô tả |
-|-------|------|----------|-------|
-| **BTC Logic** | Logic | 808 | Data chính thức ban tổ chức (JSON) |
-| **BTC Physics** | Physics | 1,352 | Data chính thức ban tổ chức (CSV) |
-| **FOLIO → Z3** | Logic (augmented) | 388* | Yale NLP FOLIO, chuyển sang Z3 code |
-| **Electro → SymPy** | Physics (augmented) | 217* | Textbook điện từ, chuyển sang SymPy code |
-| **Tổng** | | **~2,765** | |
-
-> *Số lượng sau khi filter executable. Raw: 1204 Z3, 242 SymPy.
-
-## Thông số kỹ thuật
-
-- **System prompt:** Hướng dẫn model trả lời theo format `<think>...</think>` + `<answer>...</answer>`
-- **Random seed:** 3407 (reproducible)
-- **Train/Val split:** 90/10
-- **Executable filter:** Mọi augmented code đều phải `exec()` thành công mới được giữ
 
 ## Yêu cầu
 
 ```
-pip install datasets z3-solver sympy
+pip install -r requirements.txt
 ```
 
-Hoặc dùng venv đã có sẵn:
-
-```bash
-# Windows
-& "d:\Exact 2026\venv\Scripts\python.exe" scripts/build_final_dataset.py
-```
-
-## Cấu trúc dữ liệu
+Hoặc tối thiểu:
 
 ```
-data/
-├── EXACT2026_dataset_2026-05-15/    # Data BTC (không chỉnh sửa)
-│   ├── Logic_Based_.../
-│   │   └── Logic_Based_Educational_Queries.json
-│   └── Physics_Problems_.../
-│       └── Physics_Problems_Text_Only.csv
-├── collected/
-│   ├── electro_dataset.jsonl         # Raw textbook data (input cho SymPy)
-│   └── electro_sympy_dataset.jsonl   # Intermediate SymPy output
-├── sft_dataset/                      # Intermediate augmented data
-│   ├── train.jsonl                   # (tự tạo bởi pipeline)
-│   └── val.jsonl
-└── colab_ready/                      # ← OUTPUT CUỐI CÙNG
-    ├── train.jsonl                   # Upload lên Google Drive
-    └── val.jsonl                     # → Fine-tune trên Colab
+pip install datasets z3-solver sympy pandas python-dotenv
 ```
+
+---
+
+## Workflow
+
+```mermaid
+flowchart LR
+    A[BTC Logic JSON<br/>411 records] --> C(_common.py loaders)
+    B[BTC Physics CSV<br/>1352 rows] --> C
+    D[FOLIO HuggingFace<br/>1204 records] --> C
+    E[electro_dataset.jsonl<br/>242 problems] --> C
+
+    C --> F[convert_logic_to_z3<br/>FOL → Z3 code]
+    C --> G[convert_physics_to_sympy<br/>LaTeX → SymPy code]
+
+    F --> H[prepare_coder_dataset]
+    G --> H
+    F --> I[prepare_instruct_dataset]
+    G --> I
+
+    H --> J[(data/finetune/coder.jsonl<br/>1391 records)]
+    I --> K[(data/finetune/instruct.jsonl<br/>2518 records)]
+
+    J --> L[Colab fine-tune<br/>Qwen2.5-Coder-7B]
+    K --> M[Colab fine-tune<br/>Qwen2.5-7B-Instruct]
+```
+
+---
+
+## Lưu ý
+
+- **Q19 filter** đã được apply trong `load_btc_physics()`: drop row có `id` bắt đầu
+  bằng `QA`. Bản 2026-05-15 đã clean sẵn (1,352 rows), filter để defensive cho
+  bản dataset tương lai.
+- **FOLIO offline**: nếu HuggingFace Hub không truy cập được, `load_folio()` sẽ
+  in cảnh báo và trả `[]`; pipeline vẫn build với 2 nguồn còn lại.
+- **Console encoding**: nếu chạy trên PowerShell và bị lỗi `UnicodeEncodeError`
+  với chữ Việt/Hy Lạp, set:
+  ```powershell
+  $env:PYTHONUTF8="1"; $env:PYTHONIOENCODING="utf-8"
+  ```
