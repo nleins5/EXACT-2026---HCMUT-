@@ -67,6 +67,7 @@ Hai bộ phục vụ **2 model khác nhau** trong pipeline 2-specialist của EX
 - **Hai nhánh prompt** (mirror runtime branching trong `src/agent/nodes/*_explanation.py`):
   - `branch = success` → solver chạy ok, code_output là stdout thật → confidence cao (~0.9)
   - `branch = error`   → solver fail, code_output là error string → fallback reasoning → confidence ~0.6
+- **`code_output` đến từ đâu?** Xem section [Cách sinh `code_output` cho instruct dataset](#cách-sinh-code_output-cho-instruct-dataset) phía dưới.
 - **Nguồn dữ liệu**:
   | Source        | Records | Mô tả                                                                 |
   | ------------- | ------: | --------------------------------------------------------------------- |
@@ -88,6 +89,102 @@ Hai bộ phục vụ **2 model khác nhau** trong pipeline 2-specialist của EX
 
 - Báo cáo tự sinh: phân phối theo source / type / branch + trung bình / P95 độ dài.
 - Cập nhật mỗi lần chạy lại pipeline.
+
+---
+
+## Cách sinh `code_output` cho instruct dataset
+
+`code_output` được tạo **offline lúc build dataset**, không lấy từ runtime. Có 2 nguồn:
+
+### Nguồn 1 — Lỗi thật khi `exec()` code
+
+Trong `scripts/data_prep/_common.py`, hàm `verify_python()` chạy code trong namespace
+cô lập, capture stdout/stderr, và trả về `ExecResult`:
+
+```python
+def verify_python(code: str) -> ExecResult:
+    out_buf, err_buf = io.StringIO(), io.StringIO()
+    ns = {"__builtins__": __builtins__}
+    try:
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            exec(code, ns)
+    except Exception as e:
+        return ExecResult(ok=False, stdout=..., 
+                          error=f"{type(e).__name__}: {e}")  # ← error string thật
+    return ExecResult(ok=True, stdout=out_buf.getvalue(), error="")
+```
+
+Khi code Z3/SymPy thật sự fail (ví dụ FOLIO có conversion sai cú pháp
+`s.add(ForAll(x, P(x)))))`), exception sẽ được capture thành chuỗi như
+`"SyntaxError: unmatched ')'"` hoặc `"NameError: name 'foo' is not defined"`.
+
+### Nguồn 2 — Synthetic (ép vào nhánh error)
+
+Trong `scripts/data_prep/prepare_instruct_dataset.py`, mỗi builder có pattern:
+
+```python
+force_error = rng.random() < error_ratio   # default 30%
+res = verify_python(code)
+if force_error:
+    code_error = True
+    code_output = res.error or "RuntimeError: solver inconclusive"
+else:
+    code_error = not res.ok
+    code_output = res.stdout if res.ok else (res.error or "")
+```
+
+**Ma trận quyết định:**
+
+| `force_error` | Code chạy ok? | `code_error` | `code_output`                                           |
+| :-----------: | :-----------: | :----------: | ------------------------------------------------------- |
+|     True      |      Yes      |     True     | fallback string `"RuntimeError: solver inconclusive"`   |
+|     True      |      No       |     True     | error string thật từ `verify_python`                    |
+|     False     |      Yes      |     False    | stdout thật                                             |
+|     False     |      No       |     True     | error string thật                                       |
+
+→ Đó là lý do tỷ lệ branch thực tế ~58% chứ không phải đúng 30%: lỗi tự nhiên
+(~44% với FOLIO Z3 sau filter) cộng dồn với synthetic 30% → tổng ~58%.
+
+### Điểm chèn vào prompt
+
+Hàm `_build_user_msg()` trong `prepare_instruct_dataset.py` chèn `code_output`
+vào user message theo pattern:
+
+```
+Solver code:
+```python
+<code đã sinh>
+```
+
+Solver stdout (SUCCESS branch):     ← hoặc "Solver error (ERROR branch)"
+```
+<code_output>                       ← chèn ở đây
+```
+
+Produce the ExactResponse JSON object now.
+```
+
+Target assistant cũng được sinh tương ứng (`_logic_target` / `_physics_target`):
+nếu `code_error=True` thì explanation acknowledge "the solver failed" và fallback
+reasoning từ premises/cot, confidence hạ xuống 0.6.
+
+### Tổng kết flow
+
+```
+1. Sinh code (folio_to_z3 / generate_sympy_code / electro pre-existing)
+        ↓
+2. verify_python(code) → res.ok / res.error / res.stdout
+        ↓
+3. force_error = rng.random() < error_ratio
+        ↓
+4. Quyết định code_error + code_output (theo bảng trên)
+        ↓
+5. _build_user_msg(...) chèn code_output vào user prompt
+        ↓
+6. _logic_target / _physics_target sinh JSON ExactResponse target
+        ↓
+7. chatml(system, user, assistant) → ghi vào instruct.jsonl
+```
 
 ---
 
