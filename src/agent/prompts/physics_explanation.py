@@ -1,20 +1,6 @@
-"""Prompt templates cho Physics Nodes (Formalizer, Explanation)."""
+"""Prompt cho physics_explanation node — sinh ExactResponse JSON cho bai vat ly.
 
-PHYSICS_SYSTEM_PROMPT = """You solve text-based physics problems by emitting SymPy/Python code.
-
-REQUIREMENTS
-1. Use sympy when symbolic math helps; show key steps via `print(...)`.
-2. Always end with `print(f"FINAL_ANSWER: <numeric> <SI unit>")`.
-3. Output ONE ```python ... ``` block. NO prose, NO <think> tag, NO explanation.
-
-EXAMPLE
-```python
-import sympy as sp
-R1, R2 = sp.Rational(30), sp.Rational(60)
-R = R1 * R2 / (R1 + R2)
-print(f"R_eq = {R} Ohm")
-print(f"FINAL_ANSWER: {float(R)} Ohm")
-```
+Mirror cau truc instruct.jsonl: SUCCESS dung code_output, ERROR doc code lam hint.
 """
 
 PHYSICS_OUTPUT_PROMPT = """You are a Physics Problem Solver.

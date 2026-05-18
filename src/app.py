@@ -1,19 +1,14 @@
-"""
-FastAPI application entry-point for EXACT 2026.
+"""FastAPI app — long-running middleware cho EXACT 2026.
 
-Designed as a long-running middleware:
+Lifespan:
+- Khoi tao LlamaServerSupervisor.
+- swap_to("instruct") (warm-up). Lan goi formalizer dau tien moi swap sang coder.
+- Cleanup: shutdown supervisor (kill llama-server).
 
-* On startup, the GGUF model is loaded **once** via the lifespan handler.
-  This pulls the 60-second model load out of the per-request budget.
-* On every subsequent request, ``LLMFactory.create_client`` hits the
-  in-process cache and reuses the same ``ChatLlamaCpp`` instance, so the
-  pipeline only spends time on inference.
-
-Run locally:
+Run:
     uvicorn src.app:app --host 0.0.0.0 --port 8000 --workers 1
 
-> NOTE: Always run with ``--workers 1``. Each worker would load its own
-> 5GB GGUF copy into RAM, which will OOM on most laptops.
+NOTE: Luon dung --workers 1. Moi worker se spawn rieng llama-server -> OOM.
 """
 from __future__ import annotations
 
@@ -23,55 +18,63 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.agent.llm.factory import LLMFactory
+from src.agent.llm.server_supervisor import LlamaServerSupervisor
 from src.api.routes import router as inference_router
 from src.api.schemas import HealthResponse
-from src.llm.factory import LLMFactory
 from src.utils.logger import logger
 
 
-# Filled in by the lifespan handler so /health can report cold-start cost.
-_warmup_state: dict = {"ready": False, "elapsed_seconds": None}
+# Lifespan se cap nhat — /health doc tu day.
+_warmup_state: dict = {"ready": False, "elapsed_seconds": None, "supervisor": None}
 
 
-def _warmup_model() -> float:
-    """Pre-load the GGUF model into RAM.
+def _warmup() -> tuple[float, LlamaServerSupervisor]:
+    """Spawn llama-server lan dau (role = instruct).
 
-    Done synchronously at startup so the first request doesn't pay the
-    one-off 30-60s mmap + tokenizer init cost.
-
-    Returns:
-        Elapsed seconds spent warming up.
+    Lua chon role mac dinh = instruct vi:
+    - Trong dataset, ~50% bai chua co premises (rieng physics) -> classifier
+      route physics_rag -> formalizer (coder swap toi day).
+    - Logic flow co phan classify -> formalizer (coder) -> solver -> explanation
+      (instruct). Warm-up instruct nghia la lan dau sap RA explanation se nhanh.
+    - Voi cap nhat sau, co the chuyen sang warm coder neu workload thay doi.
     """
     t0 = time.perf_counter()
-    logger.info("Warming up LLM (this loads the GGUF into memory)...")
+    logger.info("Warming up llama-server (role=instruct)...")
 
-    # ``reasoning`` matches the purpose used by formalizer/explanation nodes,
-    # so they will reuse this exact cached client (same path + temperature).
-    client = LLMFactory.create_client(purpose="reasoning")
-    _ = client.get_llm()
+    supervisor = LlamaServerSupervisor()
+    LLMFactory.init(supervisor)
+    supervisor.swap_to("instruct")
 
     elapsed = time.perf_counter() - t0
-    logger.info(f"LLM warm-up done in {elapsed:.1f}s.")
-    return elapsed
+    logger.info(f"llama-server ready in {elapsed:.1f}s.")
+    return elapsed, supervisor
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan: warm the model once before serving traffic."""
+    """App lifecycle: warm model truoc khi serve traffic, cleanup khi shutdown."""
     try:
-        elapsed = _warmup_model()
+        elapsed, supervisor = _warmup()
         _warmup_state["ready"] = True
         _warmup_state["elapsed_seconds"] = elapsed
-    except Exception as exc:  # pragma: no cover — surfaced to operator logs
-        logger.exception(f"FATAL: model warm-up failed: {exc}")
-        # Do NOT raise — let /health report not-ready instead of crashing the
-        # whole server, so the operator can still exec into the container.
+        _warmup_state["supervisor"] = supervisor
+    except Exception as exc:
+        logger.exception(f"FATAL: warm-up llama-server that bai: {exc}")
+        # Khong raise — de /health bao not-ready, operator van vao container debug duoc.
         _warmup_state["ready"] = False
         _warmup_state["elapsed_seconds"] = None
+        _warmup_state["supervisor"] = None
 
     yield
 
     logger.info("Shutting down EXACT 2026 service.")
+    sup = _warmup_state.get("supervisor")
+    if sup is not None:
+        try:
+            sup.shutdown()
+        except Exception as exc:
+            logger.warning(f"Supervisor shutdown loi: {exc}")
 
 
 app = FastAPI(
@@ -85,8 +88,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Permissive CORS — the eval system calls us cross-origin. Tighten for prod
-# behind a reverse proxy if needed.
+# CORS thoang — eval system goi cross-origin. Tighten khi deploy production.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

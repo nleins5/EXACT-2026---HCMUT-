@@ -1,60 +1,58 @@
-"""
-Logic Explanation Node — Tổng hợp kết quả thành ExactResponse.
+"""Logic Explanation Node — tong hop ket qua Z3 thanh ExactResponse (Instruct model).
 
-Có 2 nhánh prompt dựa trên `intermediate.code_error`:
-- code_error == False  → dùng LOGIC_OUTPUT_PROMPT (tin tưởng output Z3).
-- code_error == True   → dùng LOGIC_OUTPUT_ERROR_PROMPT (đọc code lỗi như gợi ý
-                          rồi để LLM tự suy luận ra đáp án).
+Hai nhanh prompt mirror dataset instruct.jsonl:
+- code_error == False -> SUCCESS prompt (tin code_output).
+- code_error == True  -> ERROR prompt (doc code lam hint).
 
-Cả 2 nhánh đều gọi LLM đúng 1 lần để tránh tràn RAM và đảm bảo timing < 60s.
+Bat ke nhanh nao deu goi LLM dung 1 lan -> dam bao timing 60s.
 """
 from src.agent.state import AgentState
 from src.agent.schema import ExactResponse
-from src.utils.logger import logger
-from src.agent.prompts.logic import (
+from src.agent.prompts.logic_explanation import (
     LOGIC_OUTPUT_PROMPT,
     LOGIC_OUTPUT_ERROR_PROMPT,
 )
+from src.utils.logger import logger
 
 
 def logic_explanation_node(state: AgentState) -> dict:
-    """Tổng hợp kết quả Z3 (hoặc fallback từ code lỗi) thành ExactResponse."""
+    """Sinh ExactResponse JSON tu code_output (success) hoac code (error)."""
     intermediate = state.get("intermediate_answer", {})
     code_error = intermediate.get("code_error", False)
 
     try:
-        from src.llm.factory import LLMFactory
-        llm_client = LLMFactory.create_client(purpose="summary")
+        from src.agent.llm.factory import LLMFactory
+        llm_client = LLMFactory.activate("instruct")
         structured_llm = llm_client.get_structured_llm(ExactResponse)
 
         if code_error:
-            premises_block = "\n".join(
-                [f"- {p}" for p in state.get("premises", [])]
-            ) or "(none)"
-
+            premises = state.get("premises", []) or []
+            premises_block = (
+                "\n".join([f"- {p}" for p in premises]) or "(none)"
+            )
             prompt = LOGIC_OUTPUT_ERROR_PROMPT.format(
                 question=state["question"],
                 premises_block=premises_block,
                 generated_code=intermediate.get("generated_code", ""),
                 error_message=intermediate.get("error_message", ""),
             )
-            logger.info("Logic explanation: dùng ERROR prompt (code lỗi).")
+            logger.info("Logic explanation: dung ERROR prompt (code loi).")
         else:
             prompt = LOGIC_OUTPUT_PROMPT.format(
                 question=state["question"],
                 code_output=intermediate.get("code_output", ""),
             )
-            logger.info("Logic explanation: dùng SUCCESS prompt.")
+            logger.info("Logic explanation: dung SUCCESS prompt.")
 
         response: ExactResponse = structured_llm.invoke(prompt)
         return {"final_answer": response.model_dump()}
 
     except Exception as e:
-        logger.error(f"Lỗi tại logic_explanation_node: {e}")
+        logger.error(f"logic_explanation_node loi: {e}")
         return {
             "final_answer": {
                 "answer": "Error",
-                "explanation": f"Lỗi hệ thống: {e}",
+                "explanation": f"Loi he thong: {e}",
                 "fol": "",
                 "cot": [],
                 "premises": [],

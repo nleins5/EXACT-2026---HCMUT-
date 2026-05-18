@@ -1,13 +1,10 @@
-"""
-Inference route for the EXACT 2026 HTTP API.
+"""Inference route cho EXACT 2026 HTTP API.
 
-Single endpoint: ``POST /predict`` — accepts the BTC payload, runs the
-LangGraph pipeline, returns the structured response.
+Single endpoint: ``POST /predict`` — accept BTC payload, run LangGraph pipeline,
+tra ket qua structured.
 
-The per-request budget is configurable via the ``EXACT_REQUEST_BUDGET_SECONDS``
-environment variable. The competition limit is 60 seconds (slide 13), but for
-development on CPU-only hardware we default to 600s so the pipeline actually
-finishes. Set the env var to ``58`` before deploying to a competition runner.
+Budget per-request lay tu settings.api.request_budget_seconds. BTC Q13 cap 60s;
+default = 600 cho dev (override bang env EXACT_REQUEST_BUDGET_SECONDS).
 """
 from __future__ import annotations
 
@@ -19,13 +16,24 @@ from fastapi import APIRouter, HTTPException, Request
 
 from src.agent.graph import run_pipeline
 from src.api.schemas import PredictRequest, PredictResponse
+from src.core.config import settings
 from src.utils.logger import logger
 
 router = APIRouter(tags=["inference"])
 
-# Competition spec (slide 13) caps requests at 60s. Default to 600s for local
-# CPU dev so we can demo the full pipeline; override for prod.
-_REQUEST_BUDGET_SECONDS = float(os.getenv("EXACT_REQUEST_BUDGET_SECONDS", "600"))
+
+def _resolve_budget() -> float:
+    """Doc budget tu env (uu tien) hoac settings.api.request_budget_seconds."""
+    env_v = os.getenv("EXACT_REQUEST_BUDGET_SECONDS")
+    if env_v:
+        try:
+            return float(env_v)
+        except ValueError:
+            logger.warning(
+                f"EXACT_REQUEST_BUDGET_SECONDS khong phai so: {env_v!r}, "
+                f"dung settings.api.request_budget_seconds."
+            )
+    return float(settings.api.request_budget_seconds)
 
 
 @router.post(
@@ -35,20 +43,20 @@ _REQUEST_BUDGET_SECONDS = float(os.getenv("EXACT_REQUEST_BUDGET_SECONDS", "600")
     summary="Run a single EXACT 2026 query through the agent pipeline.",
 )
 async def predict(payload: PredictRequest, request: Request) -> PredictResponse:
-    """Run inference on a single query.
+    """Run inference cho 1 query.
 
     Args:
-        payload:  Validated request body. ``premises-NL`` is optional and
-            distinguishes Type 1 (logic) from Type 2 (physics).
-        request:  Underlying FastAPI request, unused for now but kept for
-            future per-request tracing / cancellation hooks.
+        payload: validated request body. ``premises-NL`` optional, distinguishes
+                 Type 1 (logic) vs Type 2 (physics).
+        request: FastAPI request, reserved cho per-request tracing tuong lai.
 
     Returns:
-        :class:`PredictResponse` matching the BTC schema.
+        PredictResponse khop schema BTC.
 
     Raises:
-        HTTPException: 504 on timeout, 500 on unexpected pipeline failure.
+        HTTPException: 504 timeout, 500 unexpected pipeline failure.
     """
+    budget = _resolve_budget()
     t0 = time.perf_counter()
     premises = payload.premises_nl or []
     logger.info(
@@ -58,23 +66,23 @@ async def predict(payload: PredictRequest, request: Request) -> PredictResponse:
 
     loop = asyncio.get_running_loop()
     try:
-        # ``run_pipeline`` is sync (LangGraph + llama.cpp); offload to executor
-        # so the event loop stays responsive and we can apply a hard timeout.
+        # run_pipeline la sync (LangGraph + LLM HTTP); offload sang executor de
+        # event loop con responsive va apply duoc hard timeout.
         result = await asyncio.wait_for(
             loop.run_in_executor(
                 None,
                 lambda: run_pipeline(question=payload.question, premises=premises),
             ),
-            timeout=_REQUEST_BUDGET_SECONDS,
+            timeout=budget,
         )
     except asyncio.TimeoutError:
         elapsed = time.perf_counter() - t0
-        logger.error(f"[/predict] TIMEOUT after {elapsed:.1f}s (budget={_REQUEST_BUDGET_SECONDS}s)")
+        logger.error(f"[/predict] TIMEOUT after {elapsed:.1f}s (budget={budget}s)")
         raise HTTPException(
             status_code=504,
-            detail=f"Inference exceeded {_REQUEST_BUDGET_SECONDS}s budget.",
+            detail=f"Inference exceeded {budget}s budget.",
         )
-    except Exception as exc:  # pragma: no cover — defensive, logged below
+    except Exception as exc:
         elapsed = time.perf_counter() - t0
         logger.exception(f"[/predict] FAILED after {elapsed:.1f}s: {exc}")
         raise HTTPException(status_code=500, detail=f"Pipeline error: {exc}") from exc
@@ -85,8 +93,6 @@ async def predict(payload: PredictRequest, request: Request) -> PredictResponse:
         f"task_type={result.get('task_type')}"
     )
 
-    # ``run_pipeline`` may legitimately return None for optional fields; let
-    # PredictResponse drop them rather than emitting empty strings/lists.
     return PredictResponse(
         answer=result.get("answer") or "",
         explanation=result.get("explanation") or "",

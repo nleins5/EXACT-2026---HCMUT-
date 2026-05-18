@@ -1,34 +1,11 @@
-"""Prompt templates cho Logic Nodes (Formalizer, Explanation)."""
+"""Prompt cho logic_explanation node — sinh ExactResponse JSON.
 
-# Compact, instruction-first system prompt. The few-shot example is intentionally
-# short — DeepSeek-R1-style models pay a heavy <think> tax on long contexts.
-Z3_SYSTEM_PROMPT = """You translate natural-language logic problems into Z3 Python code.
-
-REQUIREMENTS
-1. `from z3 import *`, build a `Solver()`, add a constraint per premise.
-2. Encode the question as a goal and print: `print("ANSWER: <Yes|No|Unknown|...>")`.
-3. Output ONE ```python ... ``` block. NO prose, NO <think> tag, NO explanation.
-
-EXAMPLE
-Input: "Score 8 in final. Absent in lab. Regulation: 0 lab points -> cannot pass."
-Output:
-```python
-from z3 import *
-s = Solver()
-score_final = Int('score_final')
-absent_lab  = Bool('absent_lab')
-can_pass    = Bool('can_pass')
-s.add(score_final == 8)
-s.add(absent_lab == True)
-s.add(Implies(absent_lab, can_pass == False))
-if s.check() == sat:
-    m = s.model()
-    print("ANSWER: No" if not m[can_pass] else "ANSWER: Yes")
-else:
-    print("ANSWER: Unknown")
-```
+Hai nhanh prompt mirror dataset instruct.jsonl:
+- SUCCESS branch: code Z3 chay OK -> tin code_output, format JSON.
+- ERROR branch: code Z3 fail -> doc code nhu hint, tu suy luan, ha confidence.
 """
 
+# Branch khi solver thanh cong: chi can format ket qua thanh ExactResponse.
 LOGIC_OUTPUT_PROMPT = """You are a Logic Explainer.
 
 The Z3 solver ran successfully. Use its verified output to produce the final structured response.
@@ -50,6 +27,7 @@ Return a structured response matching the schema:
 Trust the Z3 output for the final answer. No extra prose outside the schema.
 """
 
+# Branch khi solver fail: doc code lam hint roi tu suy luan.
 LOGIC_OUTPUT_ERROR_PROMPT = """You are a Logic Explainer working in fallback mode.
 
 The Z3 solver FAILED to execute the generated code. The code still reflects the

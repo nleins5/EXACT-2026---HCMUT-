@@ -3,11 +3,11 @@ pydantic-settings
 
 langsmith
 langchain
-langchain-community
+langchain-core
+langchain-openai
 langgraph
 
-
-# LlamaIndex
+# LlamaIndex (RAG)
 llama-index
 llama-index-vector-stores-qdrant
 llama-index-embeddings-huggingface
@@ -15,9 +15,14 @@ llama-index-retrievers-bm25
 llama-index-postprocessor-sbert-rerank
 qdrant-client
 
-# LLM & Embeddings
-llama-cpp-python
+# Embeddings + reranker
 sentence-transformers
 
+# HTTP
 fastapi
 uvicorn
+httpx
+
+# Symbolic solvers (chay trong subprocess o solver node)
+z3-solver
+sympy
