@@ -1,10 +1,49 @@
+# ────────────────────────────────────────────────────────────────────
+# Python
+# ────────────────────────────────────────────────────────────────────
 venv/
 __pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ────────────────────────────────────────────────────────────────────
+# Secrets & local config
+# ────────────────────────────────────────────────────────────────────
 .env
+.env.*
+!.env.example
+
+# ────────────────────────────────────────────────────────────────────
+# Toolkit / agent metadata (local rules + plans, khong push)
+# ────────────────────────────────────────────────────────────────────
+.agents/
+.system_generated/
+Implementation/
+
+# ────────────────────────────────────────────────────────────────────
+# Notebooks & scratch
+# ────────────────────────────────────────────────────────────────────
 prepare_data_train.ipynb
-logs/ 
 notebook/
 scratch/
+logs/
+
+# ────────────────────────────────────────────────────────────────────
+# Data caches & vector store (build local, khong commit)
+# ────────────────────────────────────────────────────────────────────
 storage/
+data/external/
+data/distilled/physics_kb.raw.jsonl
+data/distilled/physics_kb.verified.jsonl
+data/distilled/cost_log.jsonl
+
+# ────────────────────────────────────────────────────────────────────
+# Models & artifacts
+# ────────────────────────────────────────────────────────────────────
 models/
 *.gguf
+*.safetensors
+*.bin

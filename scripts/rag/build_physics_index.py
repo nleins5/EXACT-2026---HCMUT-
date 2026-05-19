@@ -1,84 +1,252 @@
-"""Build Qdrant index cho physics few-shot examples.
+"""Build 2 Qdrant collection cho physics RAG tu distilled KB.
 
-Doc data/finetune/coder.jsonl, loc rows physics (system prompt mention SymPy
-hoac source field bat dau bang `physics_` / `electro_`), embed bang BAAI/bge-m3,
-luu vao collection `physics_examples` o storage/qdrant_storage/.
+Source: data/distilled/physics_kb.verified.jsonl (chi record verified=True).
 
-Chay 1 lan duy nhat khi muon enable RAG cho physics_formalizer:
+2 collection xay dung:
+1. physics_examples - per-record:
+   text = "Problem ... \n Topic ... \n Formulas ... \n Code ..."
+   Dung de tim bai toan giong runtime question (semantic match).
+
+2. physics_formulas - per-topic:
+   text = "Topic ... \n Formulas tong hop tu tat ca record cung topic"
+   Dung de fallback khi khong co bai giong: cap formula sheet theo topic.
+
+Idempotent: rebuild bang cach xoa storage/qdrant_storage/ truoc khi chay.
+
+Usage:
     python -m scripts.rag.build_physics_index
-
-Idempotent: neu collection da ton tai, doc lai metadata; muon rebuild thi
-xoa storage/qdrant_storage/ truoc khi chay lai.
+    python -m scripts.rag.build_physics_index --rebuild
 """
 from __future__ import annotations
 
+import argparse
 import json
+import shutil
+import sys
+from collections import defaultdict
 from pathlib import Path
 
-from llama_index.core import Document
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.agent.llm.embedding import EmbeddingFactory
-from src.agent.nodes.physics_rag import PHYSICS_COLLECTION
-from src.retrieval.vector_db import VectorDBManager
-from src.utils.logger import logger
+from llama_index.core import Document  # noqa: E402
+
+from src.agent.llm.embedding import EmbeddingFactory  # noqa: E402
+from src.core.config import settings  # noqa: E402
+from src.distillation.schema import KBRecord  # noqa: E402
+from src.retrieval.vector_db import VectorDBManager  # noqa: E402
+from src.utils.logger import logger  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CODER_JSONL = PROJECT_ROOT / "data" / "finetune" / "coder.jsonl"
+
+# Collection names - physics_rag_node.py phai khop.
+COLLECTION_EXAMPLES = "physics_examples"
+COLLECTION_FORMULAS = "physics_formulas"
 
 
-def _is_physics_row(row: dict) -> bool:
-    """Phan loai row co phai physics khong dua vao system prompt + user prompt.
+def _format_example_text(rec: KBRecord) -> str:
+    """Format 1 record cho per-record collection (problem + formulas + code).
 
-    Coder dataset gom 2 nhom:
-    - Logic: system prompt nhac den Z3.
-    - Physics: system prompt nhac den SymPy.
+    Embed se nhin vao toan bo block nay -> matching theo problem + formulas + code style.
     """
-    msgs = row.get("messages", [])
-    if not msgs:
-        return False
-    sys_msg = msgs[0].get("content", "") if msgs[0].get("role") == "system" else ""
-    return "sympy" in sys_msg.lower() or "SymPy" in sys_msg
+    formulas_block = "\n".join(f"  - {f}" for f in rec.formulas) if rec.formulas else "  (none)"
+    symbols_block = "\n".join(
+        f"  - {sym}: {desc}" for sym, desc in (rec.symbols or {}).items()
+    ) if rec.symbols else "  (none)"
+
+    return (
+        f"Topic: {rec.topic}\n"
+        f"Problem:\n{rec.problem}\n\n"
+        f"Formulas:\n{formulas_block}\n\n"
+        f"Symbols:\n{symbols_block}\n\n"
+        f"SymPy code:\n```python\n{rec.sympy_code}\n```\n\n"
+        f"Answer: {rec.answer}"
+    )
 
 
-def _row_to_text(row: dict) -> str:
-    """Trich (problem, code) tu 1 row coder.jsonl thanh chuoi few-shot."""
-    msgs = row.get("messages", [])
-    user_msg = next((m["content"] for m in msgs if m.get("role") == "user"), "")
-    asst_msg = next((m["content"] for m in msgs if m.get("role") == "assistant"), "")
+def _format_topic_text(topic: str, formulas_set: list[str], symbols_map: dict[str, str]) -> str:
+    """Format formula sheet cho 1 topic (gop tu nhieu record).
 
-    # User msg co the bao gom prefix `[PHYSICS PROBLEM]` -> giu nguyen, dung cho semantic match.
-    return f"Problem:\n{user_msg.strip()}\n\nCode:\n{asst_msg.strip()}"
+    Dung khi runtime question khong match bai cu the nao -> fallback bang formula sheet
+    cua topic gan nhat semantic.
+    """
+    formulas_block = "\n".join(f"  - {f}" for f in formulas_set) if formulas_set else "  (none)"
+    symbols_block = "\n".join(
+        f"  - {sym}: {desc}" for sym, desc in sorted(symbols_map.items())
+    ) if symbols_map else "  (none)"
+
+    return (
+        f"Topic: {topic}\n\n"
+        f"Canonical formulas (deduplicated):\n{formulas_block}\n\n"
+        f"Common symbols:\n{symbols_block}"
+    )
 
 
-def main() -> None:
-    if not CODER_JSONL.exists():
-        raise FileNotFoundError(f"coder.jsonl khong ton tai: {CODER_JSONL}")
+def _load_verified(paths: list[Path]) -> list[KBRecord]:
+    """Load từ một hay nhiều file JSONL, chỉ giữ record verified=True."""
+    out: list[KBRecord] = []
+    for path in paths:
+        if not path.exists():
+            logger.warning(f"  [skip] not found: {path}")
+            continue
+        n_kept = 0
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = KBRecord.from_jsonl(line)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"  [skip] malformed line in {path.name}: {e}")
+                    continue
+                if rec.verified is True:
+                    out.append(rec)
+                    n_kept += 1
+        logger.info(f"  loaded {n_kept} verified records from {path.name}")
+    return out
 
-    logger.info(f"Reading {CODER_JSONL}...")
-    docs: list[Document] = []
-    n_total = 0
-    with CODER_JSONL.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            n_total += 1
-            row = json.loads(line)
-            if not _is_physics_row(row):
-                continue
-            docs.append(Document(text=_row_to_text(row)))
 
-    logger.info(f"Loaded {len(docs)}/{n_total} physics examples tu coder.jsonl")
+def _build_examples_collection(records: list[KBRecord]) -> None:
+    """Build per-record collection (mot doc / record)."""
+    docs = [
+        Document(
+            text=_format_example_text(rec),
+            metadata={
+                "id": rec.id,
+                "topic": rec.topic,
+                "source": rec.source,
+                "answer": rec.answer,
+            },
+        )
+        for rec in records
+    ]
     if not docs:
-        logger.warning("Khong co physics example nao -> bo qua build index.")
+        logger.warning(f"No verified records -> skipping {COLLECTION_EXAMPLES}")
         return
 
     embed = EmbeddingFactory().get_embedding()
     vdb = VectorDBManager(embedding_model=embed)
-    vdb.add_documents(documents=docs, collection_name=PHYSICS_COLLECTION)
+    vdb.add_documents(documents=docs, collection_name=COLLECTION_EXAMPLES)
+    logger.info(f"OK: built '{COLLECTION_EXAMPLES}' voi {len(docs)} examples.")
+
+
+def _build_formulas_collection(records: list[KBRecord]) -> None:
+    """Build per-topic collection (mot doc / topic, gop formula).
+
+    Dedup formula bang lower-case + strip whitespace.
+    """
+    by_topic: dict[str, list[KBRecord]] = defaultdict(list)
+    for rec in records:
+        by_topic[rec.topic or "other"].append(rec)
+
+    docs: list[Document] = []
+    for topic, recs in by_topic.items():
+        # Dedup formulas
+        seen: set[str] = set()
+        unique_formulas: list[str] = []
+        for r in recs:
+            for f in r.formulas:
+                key = f.strip().lower()
+                if key and key not in seen:
+                    seen.add(key)
+                    unique_formulas.append(f.strip())
+
+        # Merge symbols (later wins)
+        merged_symbols: dict[str, str] = {}
+        for r in recs:
+            for k, v in (r.symbols or {}).items():
+                if k not in merged_symbols:
+                    merged_symbols[k] = v
+
+        text = _format_topic_text(topic, unique_formulas, merged_symbols)
+        docs.append(
+            Document(
+                text=text,
+                metadata={
+                    "topic": topic,
+                    "n_records": len(recs),
+                    "n_formulas": len(unique_formulas),
+                },
+            )
+        )
+
+    if not docs:
+        logger.warning(f"No topics -> skipping {COLLECTION_FORMULAS}")
+        return
+
+    # IMPORTANT: tao instance moi vi VectorDBManager._index cache theo instance.
+    embed = EmbeddingFactory().get_embedding()
+    vdb = VectorDBManager(embedding_model=embed)
+    vdb.add_documents(documents=docs, collection_name=COLLECTION_FORMULAS)
     logger.info(
-        f"OK: built collection '{PHYSICS_COLLECTION}' voi {len(docs)} few-shot examples."
+        f"OK: built '{COLLECTION_FORMULAS}' voi {len(docs)} topic blocks "
+        f"(total {sum(d.metadata['n_formulas'] for d in docs)} formulas)."
     )
+
+
+def _resolve_inputs(args_inputs: list[str]) -> list[Path]:
+    """Quyết định input files.
+
+    Ưức tiên: --input flag (có thể truyền nhiều lần).
+    Fallback: tự dò trong data/distilled/ theo thứ tự ưu tiên.
+    """
+    if args_inputs:
+        return [Path(p) for p in args_inputs]
+
+    candidates = [
+        PROJECT_ROOT / settings.distillation.paths.verified_output,
+        PROJECT_ROOT / "data" / "distilled" / "physics_kb.from_pf.jsonl",
+    ]
+    found = [p for p in candidates if p.exists()]
+    if not found:
+        raise FileNotFoundError(
+            "Khong tim thay file KB nao. Chay 1 trong:\n"
+            "  - python -m scripts.distill.distill_physics + verify_kb\n"
+            "  - python -m scripts.distill.fetch_physics_formulae --include-constants"
+        )
+    return found
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Build physics RAG index tu distilled KB")
+    parser.add_argument("--input", action="append", default=[],
+                        help="Input KB jsonl (truyen nhieu lan de merge). "
+                             "Default: auto-detect verified + from_pf trong data/distilled/")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="Xoa storage/qdrant_storage truoc khi build (idempotent)")
+    args = parser.parse_args()
+
+    input_paths = _resolve_inputs(args.input)
+
+    if args.rebuild:
+        qdrant_dir = PROJECT_ROOT / "storage" / "qdrant_storage"
+        if qdrant_dir.exists():
+            shutil.rmtree(qdrant_dir, ignore_errors=True)
+            logger.info(f"Removed {qdrant_dir} (rebuild mode)")
+        for col in (COLLECTION_EXAMPLES, COLLECTION_FORMULAS):
+            persist = PROJECT_ROOT / "storage" / col
+            if persist.exists():
+                shutil.rmtree(persist, ignore_errors=True)
+
+    print("=" * 70)
+    print("Build physics RAG index")
+    for p in input_paths:
+        print(f"Input: {p}")
+    print("=" * 70)
+
+    records = _load_verified(input_paths)
+    print(f"Loaded {len(records)} verified records total")
+    if not records:
+        print("FAIL: 0 verified records. Khong build.")
+        sys.exit(1)
+
+    print("\n[1/2] Building per-record examples collection...")
+    _build_examples_collection(records)
+
+    print("\n[2/2] Building per-topic formulas collection...")
+    _build_formulas_collection(records)
+
+    print("\nDone.")
 
 
 if __name__ == "__main__":

@@ -53,3 +53,24 @@ storage:
 langsmith:
   project: Exact 2026
   endpoint: https://api.smith.langchain.com
+
+# Knowledge distillation (offline pipeline)
+# Goi teacher LLM de TRICH XUAT cong thuc tu CoT co san trong dataset BTC,
+# KHONG goi tai runtime.
+distillation:
+  teacher:
+    provider: gemini                  # gemini | openai
+    model_name: gemini-2.5-flash-lite # re nhat trong dong Flash
+    temperature: 0.1                  # extraction can deterministic
+    max_output_tokens: 1024           # output ngan vi chi extract
+    api_key_env: GOOGLE_API_KEY       # ten env var, KHONG hardcode key
+  pipeline:
+    mode: extract                     # extract | generate
+    concurrency: 8                    # so request song song
+    max_retries: 3
+    retry_backoff_s: 2.0
+    timeout_s: 60
+  paths:
+    raw_output: data/distilled/physics_kb.raw.jsonl
+    verified_output: data/distilled/physics_kb.verified.jsonl
+    cost_log: data/distilled/cost_log.jsonl

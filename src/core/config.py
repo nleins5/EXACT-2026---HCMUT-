@@ -96,6 +96,40 @@ class AppConfig(BaseModel):
     debug: bool
 
 
+# ── Distillation config (offline pipeline, optional) ─────────────────
+
+
+class DistillationTeacherConfig(BaseModel):
+    """Teacher LLM config (Gemini/OpenAI) goi offline de sinh KB."""
+    provider: str = "gemini"
+    model_name: str = "gemini-2.5-flash-lite"
+    temperature: float = 0.1
+    max_output_tokens: int = 1024
+    api_key_env: str = "GOOGLE_API_KEY"
+
+
+class DistillationPipelineConfig(BaseModel):
+    # extract: trich xuat tu CoT co san trong dataset (re, deterministic).
+    # generate: sinh tu dau (dat, dung khi khong co CoT).
+    mode: str = "extract"
+    concurrency: int = 8
+    max_retries: int = 3
+    retry_backoff_s: float = 2.0
+    timeout_s: int = 60
+
+
+class DistillationPathsConfig(BaseModel):
+    raw_output: str = "data/distilled/physics_kb.raw.jsonl"
+    verified_output: str = "data/distilled/physics_kb.verified.jsonl"
+    cost_log: str = "data/distilled/cost_log.jsonl"
+
+
+class DistillationConfig(BaseModel):
+    teacher: DistillationTeacherConfig = Field(default_factory=DistillationTeacherConfig)
+    pipeline: DistillationPipelineConfig = Field(default_factory=DistillationPipelineConfig)
+    paths: DistillationPathsConfig = Field(default_factory=DistillationPathsConfig)
+
+
 class Settings(BaseSettings):
     """Top-level settings. Override bang env var:
     - LANGSMITH_API_KEY (cho tracing).
@@ -110,6 +144,7 @@ class Settings(BaseSettings):
     retrieval: RetrievalConfig
     storage: StorageConfig
     langsmith: LangsmithConfig
+    distillation: DistillationConfig = Field(default_factory=DistillationConfig)
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=True

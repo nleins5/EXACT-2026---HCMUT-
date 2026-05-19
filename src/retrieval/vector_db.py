@@ -28,7 +28,8 @@ class VectorDBManager:
         self._qdrant_path.mkdir(parents=True, exist_ok=True)
 
         self._db_client = None
-        self._index = None
+        # Cache index per-collection (truoc day la single field -> bug khi 2 collection).
+        self._index_cache: dict[str, object] = {}
 
     @property
     def db_client(self) -> QdrantClient:
@@ -62,7 +63,7 @@ class VectorDBManager:
                 collection_name=collection_name,
                 vectors_config=VectorParams(size=embed_dim, distance=Distance.COSINE),
             )
-            logger.info(f"✅ Created Qdrant collection '{collection_name}' (dim={embed_dim})")
+            logger.info(f"[OK] Created Qdrant collection '{collection_name}' (dim={embed_dim})")
 
         vector_store = QdrantVectorStore(
             client=self.db_client,
@@ -82,46 +83,47 @@ class VectorDBManager:
         try:
             if self._db_client is not None:
                 self._db_client.close()
-            self._index = None
+            self._index_cache.clear()
             self._db_client = None
             gc.collect()
 
             if self.base_storage_dir.exists():
                 shutil.rmtree(self.base_storage_dir, ignore_errors=True)
-                logger.info(f"🧹 Cleaned up storage directory: {self.base_storage_dir}")
+                logger.info(f"[CLEAN] Cleaned up storage directory: {self.base_storage_dir}")
 
             self.base_storage_dir.mkdir(parents=True, exist_ok=True)
             self._qdrant_path.mkdir(parents=True, exist_ok=True)
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to reset DB: {e}")
+            logger.error(f"[FAIL] Failed to reset DB: {e}")
             return False
 
     def get_index(self, collection_name: str = "default_collection"):
-        if self._index is not None:
-            return self._index
+        if collection_name in self._index_cache:
+            return self._index_cache[collection_name]
 
         try:
             persist_dir = self.get_persist_dir(collection_name)
             if (persist_dir / "docstore.json").exists():
                 storage_context = self._get_storage_context(collection_name, persist_dir=persist_dir)
-                self._index = load_index_from_storage(
+                index = load_index_from_storage(
                     storage_context,
                     embed_model=self.embedding_model,
                 )
-                return self._index
+                self._index_cache[collection_name] = index
+                return index
             return None
         except Exception as e:
-            logger.warning(f"⚠️ Error loading index for '{collection_name}': {e}")
+            logger.warning(f"[WARN] Error loading index for '{collection_name}': {e}")
             return None
 
     def add_documents(self, documents, collection_name: str = "default_collection"):
         """Insert documents into the index and persist."""
         try:
-            self._index = self.get_index(collection_name)
-            if self._index is None:
+            index = self.get_index(collection_name)
+            if index is None:
                 storage_context = self._get_storage_context(collection_name)
-                self._index = VectorStoreIndex.from_documents(
+                index = VectorStoreIndex.from_documents(
                     documents,
                     storage_context=storage_context,
                     embed_model=self.embedding_model,
@@ -129,13 +131,14 @@ class VectorDBManager:
                 )
             else:
                 for doc in documents:
-                    self._index.insert(doc)
+                    index.insert(doc)
 
             persist_dir = self.get_persist_dir(collection_name)
-            self._index.storage_context.persist(persist_dir=str(persist_dir))
-            logger.info(f"✅ Persisted index for '{collection_name}'")
+            index.storage_context.persist(persist_dir=str(persist_dir))
+            self._index_cache[collection_name] = index
+            logger.info(f"[OK] Persisted index for '{collection_name}'")
         except Exception as e:
-            logger.error(f"❌ Error in add_documents: {e}")
+            logger.error(f"[FAIL] Error in add_documents: {e}")
             raise
 
     def get_retriever(self, similarity_top_k: int = 20, collection_name: str = "default_collection"):

@@ -26,3 +26,6 @@ httpx
 # Symbolic solvers (chay trong subprocess o solver node)
 z3-solver
 sympy
+
+# Knowledge distillation (offline pipeline only - khong import o runtime)
+google-generativeai
