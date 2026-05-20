@@ -21,13 +21,13 @@ llm:
 
   coder:
     model_name: qwen2.5-coder-7b-instruct
-    model_path: models/qwen2.5-coder-7b-instruct.Q4_K_M.gguf
+    model_path: models/exact-2026/qwen2.5-coder-7b-instruct.Q4_K_M.gguf
     temperature: 0.0
     max_tokens: 1024
 
   instruct:
     model_name: qwen2.5-7b-instruct
-    model_path: models/qwen2.5-7b-instruct.Q4_K_M.gguf
+    model_path: models/exact-2026/Qwen2.5-7B-Instruct.Q4_K_M.gguf
     temperature: 0.0
     max_tokens: 1024
 
