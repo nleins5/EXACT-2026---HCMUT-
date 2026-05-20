@@ -31,15 +31,15 @@ Hai bộ phục vụ **2 model khác nhau** trong pipeline 2-specialist của EX
       {"role": "user",      "content": "[LOGIC PROBLEM] ... Premises: ... Question: ..."},
       {"role": "assistant", "content": "```python\n<Z3 hoặc SymPy code>\n```"}
     ],
-    "meta": {"source": "folio|btc_physics|electro", "type": "logic|physics", "uid": "..."}
+    "meta": {"source": "btc_physics|folio|electro", "type": "logic|physics", "uid": "..."}
   }
   ```
 - **Nguồn dữ liệu**:
   | Source        | Records | Mô tả                                                                |
   | ------------- | ------: | -------------------------------------------------------------------- |
-  | `folio`       |     177 | yale-nlp/FOLIO premises-FOL → Z3 entailment script (verified `exec`) |
-  | `btc_physics` |   1,022 | BTC Physics CSV (Q19-filtered) → SymPy verification template         |
-  | `electro`     |     192 | Textbook điện từ → SymPy code (đã verify trong file electro_sympy)   |
+  | `btc_physics` |   1,022 | Dataset BTC chính thức - Physics CSV → SymPy template               |
+  | `folio`       |     177 | Dataset bên ngoài (yale-nlp/FOLIO) - premises-FOL → Z3 entailment |
+  | `electro`     |     192 | Dataset nội bộ - Textbook điện từ → SymPy code (đã verify)         |
 
   *Mọi record đều đã pass `exec()` filter — code thực sự chạy được.*
 - **Model đích**: `unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit`
@@ -71,9 +71,9 @@ Hai bộ phục vụ **2 model khác nhau** trong pipeline 2-specialist của EX
 - **Nguồn dữ liệu**:
   | Source        | Records | Mô tả                                                                 |
   | ------------- | ------: | --------------------------------------------------------------------- |
-  | `folio`       |   1,082 | FOLIO premises + Z3 code + label → JSON answer Yes/No/Unknown         |
-  | `btc_physics` |   1,213 | BTC Physics + SymPy code + cot → JSON answer với cot làn premises     |
-  | `electro`     |     223 | Textbook điện từ + SymPy code → JSON answer dạng LaTeX                |
+  | `btc_physics` |   1,213 | Dataset BTC chính thức - Physics + SymPy code + cot                  |
+  | `folio`       |   1,082 | Dataset bên ngoài (yale-nlp/FOLIO) - premises + Z3 code + label      |
+  | `electro`     |     223 | Dataset nội bộ - Textbook điện từ + SymPy code                       |
 
   *Tỷ lệ branch thực tế ~58% error / 42% success* (vì FOLIO Z3 có ~44% record Z3-engine
   thật sự fail nên cũng route vào nhánh error). Có thể giảm bằng `--error-ratio 0.0`
@@ -218,6 +218,16 @@ reasoning từ premises/cot, confidence hạ xuống 0.6.
    - Train 2-3 epoch với `instruct.jsonl`, eval bằng `instruct.eval.jsonl`.
    - Export GGUF Q4_K_M → drop vào `models/qwen-instruct-7b.gguf`.
 4. Cập nhật `config/setting.yaml` để `LlamaServerSupervisor` swap đúng 2 GGUF mới.
+
+---
+
+## Code fine-tune
+
+Code fine-tune nằm tại `fine_tune/`:
+- `fine_tune/qwen2.5-coder-7b/fine_tune.ipynb` — Notebook fine-tune Coder
+- `fine_tune/qwen2.5-7b-instruct/fine_tune.ipynb` — Notebook fine-tune Instruct
+
+Xem `fine_tune/README.md` để biết chi tiết workflow fine-tune trên Google Colab.
 
 ---
 

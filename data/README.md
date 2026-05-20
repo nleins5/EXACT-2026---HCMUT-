@@ -59,6 +59,21 @@ data/
 
 **Ghi chú**: `electro` là dataset **nội bộ** bạn tự thu thập từ textbook điện từ, **không phải** từ BTC hay từ GitHub/HuggingFace.
 
+**Workflow**:
+```powershell
+# Regenerate datasets
+.\venv\Scripts\python.exe -m scripts.data_prep.prepare_coder_dataset
+.\venv\Scripts\python.exe -m scripts.data_prep.prepare_instruct_dataset
+```
+
+**Fine-tune trên Colab**:
+1. Zip `data/finetune/` → upload Drive
+2. Notebook 1: Coder (Qwen2.5-Coder-7B-Instruct)
+3. Notebook 2: Instruct (Qwen2.5-7B-Instruct)
+4. Export GGUF Q4_K_M → drop vào `models/`
+
+**Code fine-tune**: Xem `fine_tune/README.md` để biết notebook fine-tune chi tiết.
+
 ---
 
 ## 3. distilled/ — Physics KB cho RAG
