@@ -21,29 +21,23 @@ __pycache__/
 # ────────────────────────────────────────────────────────────────────
 .agents/
 .system_generated/
-Implementation/
 
 # ────────────────────────────────────────────────────────────────────
 # Notebooks & scratch
 # ────────────────────────────────────────────────────────────────────
-prepare_data_train.ipynb
-notebook/
-scratch/
-logs/
+/logs
 
 # ────────────────────────────────────────────────────────────────────
 # Data caches & vector store (build local, khong commit)
 # ────────────────────────────────────────────────────────────────────
 storage/
-data/external/
-data/distilled/physics_kb.raw.jsonl
-data/distilled/physics_kb.verified.jsonl
-data/distilled/cost_log.jsonl
+data/
+*.jsonl
 
 # ────────────────────────────────────────────────────────────────────
 # Models & artifacts
 # ────────────────────────────────────────────────────────────────────
-models/
-*.gguf
+
+*.gguf 
 *.safetensors
-*.bin
+*.bin 
