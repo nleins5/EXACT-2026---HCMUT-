@@ -1,7 +1,7 @@
-"""Verify SymPy code trong physics_kb.raw.jsonl, mark verified=true/false.
+"""Verify SymPy code in physics_kb.raw.jsonl, mark verified=true/false.
 
-Mirror behavior cua physics_solver_node: subprocess timeout 10s, capture stdout/stderr.
-Filter: chi giu record verified=True khi index sang Qdrant (lam o build_physics_index).
+Mirrors behavior of physics_solver_node: subprocess timeout 10s, capture stdout/stderr.
+Filter: only keep verified=True records when indexing to Qdrant (done in build_physics_index).
 
 Usage:
     python -m scripts.distill.verify_kb
@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.core.config import settings  # noqa: E402
-from src.distillation.schema import KBRecord  # noqa: E402
+from scripts.distill.schema import KBRecord  # noqa: E402
 from src.utils.logger import logger  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -29,7 +29,7 @@ DEFAULT_TIMEOUT_S = 10
 
 
 def _run_code(code: str, timeout_s: int) -> tuple[bool, str, str]:
-    """Run code trong subprocess Python rieng. Tra ve (ok, stdout, stderr)."""
+    """Run code in separate Python subprocess. Returns (ok, stdout, stderr)."""
     if not code.strip():
         return False, "", "empty code"
 
@@ -51,7 +51,7 @@ def _run_code(code: str, timeout_s: int) -> tuple[bool, str, str]:
         ok = proc.returncode == 0
         return ok, proc.stdout or "", proc.stderr or ""
     except subprocess.TimeoutExpired:
-        return False, "", f"TimeoutError: code chay qua {timeout_s}s"
+        return False, "", f"TimeoutError: code ran over {timeout_s}s"
     except Exception as e:  # noqa: BLE001
         return False, "", f"{type(e).__name__}: {e}"
     finally:
@@ -72,9 +72,9 @@ def _verify_one(rec: KBRecord, timeout_s: int) -> KBRecord:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Verify SymPy code in distilled KB")
     parser.add_argument("--in", dest="in_path", type=str, default="",
-                        help="Input raw KB jsonl (default: tu setting.yaml)")
+                        help="Input raw KB jsonl (default: from setting.yaml)")
     parser.add_argument("--out", dest="out_path", type=str, default="",
-                        help="Output verified KB jsonl (default: tu setting.yaml)")
+                        help="Output verified KB jsonl (default: from setting.yaml)")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_S,
                         help=f"Per-record timeout (default {DEFAULT_TIMEOUT_S}s)")
     args = parser.parse_args()

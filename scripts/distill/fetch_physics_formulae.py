@@ -1,6 +1,6 @@
-"""Fetch + filter PhysicsFormulae KB tu repo BenjaminTMilnes/PhysicsFormulae.
+"""Fetch + filter PhysicsFormulae KB from repo BenjaminTMilnes/PhysicsFormulae.
 
-File `Compiled.json` co schema:
+File `Compiled.json` has schema:
 {
   "Formulae":   [ {Reference, Title, Interpretation, Content (LaTeX),
                    Identifiers: [{Content, Reference, Definition, Units, Dimensions}],
@@ -9,7 +9,7 @@ File `Compiled.json` co schema:
   "References": [...], "FormulaSets": [...], "Curricula": [...], "FormulaSheets": [...]
 }
 
-Filter theo `Fields` whitelist (lay vat ly pho thong + dai cuong, bo
+Filter by `Fields` whitelist (keep general physics + undergraduate, remove
 cosmology/astro/medical/general-relativity).
 
 Usage:
@@ -17,10 +17,10 @@ Usage:
     python -m scripts.distill.fetch_physics_formulae
     python -m scripts.distill.fetch_physics_formulae --include-constants
 
-LICENSE: Repo BenjaminTMilnes/PhysicsFormulae KHONG co LICENSE file.
-Mac dinh = all rights reserved. Su dung tham khao formulas (facts khong
-copyright duoc), KHONG copy LaTeX/text wholesale; doi sang plain math
-truoc khi index. Ghi disclosure trong DATA_DISCLOSURE.md.
+LICENSE: BenjaminTMilnes/PhysicsFormulae repo has NO LICENSE file.
+Default = all rights reserved. Use formulas (facts are not copyrighted),
+DO NOT copy LaTeX/text wholesale; convert to plain math before indexing.
+Disclose in DATA_DISCLOSURE.md.
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.distillation.schema import KBRecord  # noqa: E402
+from scripts.distill.schema import KBRecord  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 COMPILED_URL = (
@@ -45,22 +45,21 @@ CACHE_PATH = PROJECT_ROOT / "data" / "external" / "PhysicsFormulae_Compiled.json
 DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "distilled" / "physics_kb.from_pf.jsonl"
 
 
-# ── Field whitelist - dung scope EXACT 2026 (text-based physics) ───────
-# Theo EXACT_Slides.pdf trang 22:
+# ── Field whitelist - for EXACT 2026 scope (text-based physics) ───────
+# According to EXACT_Slides.pdf page 22:
 #   "1,755 text-only physics problems covering electric circuits and
 #    electrostatics. Topics: Ohm's law, Kirchhoff's laws, series/parallel
 #    circuits, Coulomb's law, electric field, electric potential,
 #    capacitance."
-# Vi vay chi giu electrostatics + electrical circuits, KHONG giu
-# mechanics/thermo/optics/quantum/...
+# So only keep electrostatics + electrical circuits, NOT mechanics/thermo/optics/quantum/...
 INCLUDED_FIELDS = {
     "Classical Electromagnetism",   # Coulomb, E-field, Gauss, potential
     "Electrical Circuits",          # Ohm, Kirchhoff, RC
     "Electric Circuits",
 }
 
-# Maxwell + Electromagnetism (induction/Ampere) duoc gan whitelist
-# nhung khong nam trong scope; neu can sau co the bat lai.
+# Maxwell + Electromagnetism (induction/Ampere) are whitelisted
+# but not in scope; can be re-enabled later if needed.
 EXCLUDED_FIELDS = {
     "Space Physics", "Astronomy", "Cosmology", "Medical Physics",
     "General Relativity", "Special Relativity", "Galilean Relativity",
@@ -75,29 +74,29 @@ EXCLUDED_FIELDS = {
 }
 
 # Map -> KBRecord topic enum.
-# Classical Electromagnetism PhysicsFormulae chua ca tinh dien (Coulomb,
-# E-field, potential, Gauss) lan tu (Ampere, Biot-Savart, Faraday). De
-# tranh nham, default ve electrostatics; cac record tu (induction) se
-# duoc loc khoi index sau khi rebuild neu can.
+# Classical Electromagnetism in PhysicsFormulae includes both electrostatics
+# (Coulomb, E-field, potential, Gauss) and magnetism (Ampere, Biot-Savart, Faraday).
+# To avoid confusion, default to electrostatics; magnetism records can be filtered
+# out after rebuild if needed.
 FIELD_TO_TOPIC = {
     "Classical Electromagnetism": "electrostatics",
     "Electrical Circuits": "electric_circuits",
     "Electric Circuits": "electric_circuits",
 }
 
-# ── Constant whitelist - chi giu hang so dung cho electrostatics/DC ───
-# Reference name trong Compiled.json (khong phan biet hoa thuong).
+# ── Constant whitelist - only constants used for electrostatics/DC ───
+# Reference name in Compiled.json (case-insensitive).
 INCLUDED_CONSTANTS = {
     "PermittivityOfFreeSpace",   # epsilon_0
     "PermeabilityOfFreeSpace",   # mu_0
     "ElementaryCharge",          # e
     "CoulombConstant",           # k_e = 1 / (4 pi epsilon_0)
-    "ElectronRestMass",          # m_e (vai bai co e/m_e)
+    "ElectronRestMass",          # m_e (some problems use e/m_e)
     "ProtonRestMass",            # m_p (proton charge ratio)
 }
 
 
-# ── LaTeX -> plain math (don gian, du de embed) ─────────────────────────
+# ── LaTeX -> plain math (simple, enough for embedding) ──────────────────
 
 _LATEX_REPLACEMENTS = [
     (r"\\textbf\{([^}]*)\}", r"\1"),     # bold vector
@@ -181,7 +180,7 @@ def _flatten_equations(rec: dict) -> list[str]:
             title = (v.get("Title") or "").strip()
             plain = latex_to_plain(str(vc))
             out.append(f"[{title}] {plain}" if title else plain)
-    # dedup giu thu tu
+    # dedup keeping order
     seen: set[str] = set()
     uniq: list[str] = []
     for e in out:
@@ -265,7 +264,7 @@ def constant_to_kb(rec: dict) -> KBRecord | None:
         id=f"pf_const_{name}",
         source="physics_formulae_const",
         problem=f"Physical constant: {title}. {interp}".strip(),
-        topic="other",   # constants khong co Fields -> default
+        topic="other",   # constants have no Fields -> default
         formulas=[formula],
         symbols={sym: f"{title} ({unit})"} if sym else {},
         sympy_code="",
@@ -281,13 +280,13 @@ def constant_to_kb(rec: dict) -> KBRecord | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Fetch + filter PhysicsFormulae KB cho EXACT 2026"
+        description="Fetch + filter PhysicsFormulae KB for EXACT 2026"
     )
     parser.add_argument("--force-download", action="store_true")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Khong ghi file, chi liet ke + dem")
+                        help="Do not write file, only list and count")
     parser.add_argument("--include-constants", action="store_true",
-                        help="Them 21 constants vao output")
+                        help="Add 21 constants to output")
     parser.add_argument("--output", type=str, default=str(DEFAULT_OUTPUT))
     args = parser.parse_args()
 
@@ -325,8 +324,8 @@ def main() -> None:
             kb = constant_to_kb(rec)
             if kb is None:
                 continue
-            # Map topic theo ten hang so (electrostatics la default cho
-            # ca cac hang so dung chung).
+            # Map topic by constant name (electrostatics is default for
+            # all constants used in electrostatics/DC).
             if ref == "VacuumPermeability":
                 kb.topic = "electric_circuits"
             else:
@@ -376,12 +375,12 @@ def main() -> None:
             f.write(kb.to_jsonl() + "\n")
     print(f"Wrote {len(all_records)} records -> {out_path}")
     print()
-    print("Tiep theo:")
-    print("  - Records nay da co verified=true (formula tu textbook).")
-    print("  - Merge vao verified KB:")
+    print("Next steps:")
+    print("  - These records have verified=true (formulas from textbook).")
+    print("  - Merge into verified KB:")
     print("    Get-Content data/distilled/physics_kb.from_pf.jsonl >> "
           "data/distilled/physics_kb.verified.jsonl")
-    print("  - Hoac dung rieng cho FORMULAS collection o build_physics_index.")
+    print("  - Or use separately for FORMULAS collection in build_physics_index.")
 
 
 if __name__ == "__main__":

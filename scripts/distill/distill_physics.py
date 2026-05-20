@@ -1,7 +1,7 @@
-"""Distill physics knowledge tu teacher LLM -> data/distilled/physics_kb.raw.jsonl.
+"""Distill physics knowledge from teacher LLM -> data/distilled/physics_kb.raw.jsonl.
 
-Resumable: doc lai output co san, skip ID da co.
-Concurrent: dung asyncio.Semaphore de gioi han so request song song.
+Resumable: reads existing output, skips IDs already done.
+Concurrent: uses asyncio.Semaphore to limit parallel requests.
 
 Usage:
     python -m scripts.distill.distill_physics --source btc
@@ -11,9 +11,9 @@ Usage:
 CLI:
     --source btc | electro | all  (default: all)
     --limit N                     (default: full)
-    --concurrency K               (default: tu setting.yaml)
-    --output PATH                 (default: tu setting.yaml)
-    --dry-run                     (chi liet ke ID se distill, khong goi LLM)
+    --concurrency K               (default: from setting.yaml)
+    --output PATH                 (default: from setting.yaml)
+    --dry-run                     (list IDs only, no LLM calls)
 """
 from __future__ import annotations
 
@@ -22,16 +22,15 @@ import asyncio
 import json
 import sys
 import time
-from dataclasses import asdict
 from pathlib import Path
 
-# Cho phep import src.* khi chay module nay.
+# Allow importing src.* when running this module.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.data_prep._common import load_btc_physics, load_electro_sympy  # noqa: E402
 from src.core.config import settings  # noqa: E402
-from src.distillation.schema import KBRecord  # noqa: E402
-from src.distillation.teacher_client import TeacherClientError, build_teacher_client  # noqa: E402
+from scripts.distill.schema import KBRecord  # noqa: E402
+from scripts.distill.teacher_client import TeacherClientError, build_teacher_client  # noqa: E402
 from src.utils.logger import logger  # noqa: E402
 
 
@@ -39,7 +38,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Source loaders -> normalize ve (id, source, problem, hint)
+# Source loaders -> normalize to (id, source, problem, hint, answer, unit)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -59,9 +58,9 @@ def _load_electro_problems() -> list[tuple[str, str, str, str, str, str]]:
     out: list[tuple[str, str, str, str, str, str]] = []
     for s in samples:
         rid = f"electro_{s.id}"
-        # Hint = solution paragraph dau tien (truncate de khong qua tai prompt).
+        # Hint = first paragraph of solution (truncate to avoid overloading prompt).
         hint = (s.solution or "")[:1000]
-        # ElectroSample co the khong co unit field; default rong.
+        # ElectroSample may not have unit field; default empty.
         ans = getattr(s, "answer", "") or ""
         unit = getattr(s, "unit", "") or ""
         out.append((rid, "electro", s.question, hint, ans, unit))
@@ -84,7 +83,7 @@ def _load_problems(source: str) -> list[tuple[str, str, str, str, str, str]]:
 
 
 def _existing_ids(output_path: Path) -> set[str]:
-    """Doc output cu, tra ve set ID da distill thanh cong."""
+    """Read existing output, return set of IDs already distilled."""
     if not output_path.exists():
         return set()
     seen: set[str] = set()
@@ -135,7 +134,7 @@ async def _distill_one(
     output_path: Path,
     cost_log_path: Path,
 ) -> tuple[str, bool, str]:
-    """Distill 1 problem, ghi ngay vao file (incremental). Tra ve (id, ok, error)."""
+    """Distill 1 problem, write immediately to file (incremental). Returns (id, ok, error)."""
     async with sem:
         t0 = time.monotonic()
         try:
@@ -232,12 +231,12 @@ async def _amain(args: argparse.Namespace) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Distill physics KB tu teacher LLM")
+    parser = argparse.ArgumentParser(description="Distill physics KB from teacher LLM")
     parser.add_argument("--source", choices=["btc", "electro", "all"], default="all")
     parser.add_argument("--limit", type=int, default=0, help="Max records (0 = all)")
-    parser.add_argument("--concurrency", type=int, default=0, help="0 = dung config")
+    parser.add_argument("--concurrency", type=int, default=0, help="0 = use config")
     parser.add_argument("--output", type=str, default="", help="Override output path")
-    parser.add_argument("--dry-run", action="store_true", help="Liet ke ID, khong goi LLM")
+    parser.add_argument("--dry-run", action="store_true", help="List IDs only, no LLM calls")
     args = parser.parse_args()
 
     rc = asyncio.run(_amain(args))
