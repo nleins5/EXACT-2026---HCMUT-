@@ -23,6 +23,7 @@ Hệ thống kết hợp khả năng suy luận của LLM với các công cụ 
 - **⚡ Logic & Physics Solvers**: Code Z3 / SymPy chạy trong subprocess an toàn (timeout 30s), kết quả feed thẳng vào Instruct node để tổng hợp `ExactResponse`.
 - **🔍 Hybrid Retrieval cho Physics**: BM25 + Qdrant + reranker `BAAI/bge-reranker-base`, truy xuất few-shot SymPy examples từ `coder.jsonl` → cấp context cho `physics_formalizer`.
 - **🛡️ Branching success/error**: Khi solver fail, explanation node đọc code lỗi như hint và tự suy luận → đảm bảo có đáp án trong mọi tình huống.
+- **🤖 Distillation Pipeline**: Teacher LLM (Gemini Flash Lite) trích xuất physics KB từ BTC + Electro → build vector index cho RAG. Chi phí ~0.18 USD cho toàn bộ 1,594 bài.
 
 ---
 
@@ -160,6 +161,7 @@ curl http://127.0.0.1:8001/v1/models   # llama-server endpoint
 | `scripts/rag/` | Build Qdrant index cho physics |
 | `data/finetune/` | ChatML datasets đã filter (sẵn sàng fine-tune) |
 | `data/distilled/` | Physics knowledge base (formulas + examples) |
+| `data/` | [Tất cả dữ liệu](data/README.md) (BTC, finetune, distilled, external) |
 | `config/` | Cấu hình YAML + logging |
 
 ---
@@ -180,6 +182,13 @@ Tài liệu đầy đủ bằng tiếng Việt nằm tại:
   - Hướng dẫn cài đặt & chạy
   - Trạng thái hiện tại & roadmap
   - Lỗi đã biết & cheat sheet
+
+- **`data/README.md`** — Hướng dẫn chi tiết về toàn bộ dữ liệu:
+  - Dataset BTC chính thức (Type 1 + Type 2)
+  - Datasets fine-tune (coder.jsonl, instruct.jsonl)
+  - Physics KB cho RAG (distillation pipeline)
+  - External resources (PhysicsFormulae)
+  - Nguồn dữ liệu: FOLIO, Physics, Electro
 
 ---
 
