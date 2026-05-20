@@ -1,4 +1,4 @@
-# EXACT-2026: Agentic AI for Logic & Physics
+# EXACT-2026: Agentic AI cho Logic & Vật lý
 
 ![EXACT-2026 Banner](https://img.shields.io/badge/Project-EXACT--2026-blueviolet?style=for-the-badge&logo=ai)
 ![LangGraph](https://img.shields.io/badge/Framework-LangGraph-orange?style=flat-square)
@@ -6,7 +6,12 @@
 ![Z3](https://img.shields.io/badge/Solver-Z3-green?style=flat-square)
 ![SymPy](https://img.shields.io/badge/Math-SymPy-red?style=flat-square)
 
-**EXACT-2026** là một hệ thống AI đại lý (Agentic AI) tiên tiến được xây dựng trên nền tảng LangGraph, chuyên giải quyết các bài toán Logic phức tạp và các vấn đề Vật lý định lượng bằng cách kết hợp khả năng suy luận của LLM với các công cụ tính toán hình thức.
+**EXACT-2026** là hệ thống AI đại lý (Agentic AI) tiên tiến được xây dựng trên nền tảng LangGraph, chuyên giải quyết hai loại bài toán giáo dục:
+
+- **Type 1**: Logic-Based Educational Queries (suy luận logic từ các giả thiết)
+- **Type 2**: Physics Problems (giải bài toán vật lý định lượng)
+
+Hệ thống kết hợp khả năng suy luận của LLM với các công cụ tính toán hình thức (Z3 cho logic, SymPy cho vật lý).
 
 ---
 
@@ -23,7 +28,7 @@
 
 ## 🏗️ Kiến trúc hệ thống
 
-```text
+```
 EXACT-2026/
 ├── bin/llama-cpp/                  # llama-server.exe (binary, tải tay)
 ├── models/                         # GGUF weights (Coder + Instruct)
@@ -130,21 +135,56 @@ curl http://127.0.0.1:8001/v1/models   # llama-server endpoint
 
 ## 📋 Tuân thủ BTC EXACT 2026
 
-| Quy tắc                    | Nguồn       | Cách tuân thủ                                                 |
-| -------------------------- | ----------- | ------------------------------------------------------------- |
-| Model ≤ 8B                 | QA Q1       | Qwen2.5 7B class                                              |
-| Single-resident            | QA Q3       | `LlamaServerSupervisor.swap_to()` kill cũ trước khi spawn mới |
-| OpenAI-style serving       | QA Q5       | `llama-server` expose `/v1/chat/completions` + `/v1/models`   |
-| Cho phép tools             | QA Q7       | Z3 + SymPy chạy subprocess                                    |
-| Cho phép RAG               | QA Q8       | Hybrid retriever cho physics_formalizer                       |
-| Hard cap 60s/request       | QA Q13      | `asyncio.wait_for` trong `routes.py`                          |
-| Single endpoint Type 1 + 2 | QA Q17, Q18 | `POST /predict`, classifier route theo `premises`             |
-| Filter sample `QA-`        | QA Q19      | Áp dụng tại `scripts/data_prep/`                              |
+| Quy tắc                    | Cách tuân thủ                                                 |
+| -------------------------- | ------------------------------------------------------------- |
+| Model ≤ 8B                 | Qwen2.5 7B class                                              |
+| Single-resident            | `LlamaServerSupervisor.swap_to()` kill cũ trước khi spawn mới |
+| OpenAI-style serving       | `llama-server` expose `/v1/chat/completions` + `/v1/models`   |
+| Cho phép tools             | Z3 + SymPy chạy subprocess                                    |
+| Cho phép RAG               | Hybrid retriever cho physics_formalizer                       |
+| Hard cap 60s/request       | `asyncio.wait_for` trong `routes.py`                          |
+| Single endpoint Type 1 + 2 | `POST /predict`, classifier route theo `premises`             |
+| Filter sample `QA-`        | Áp dụng tại `scripts/data_prep/`                              |
+
+---
+
+## 📁 Cấu trúc thư mục quan trọng
+
+| Thư mục | Mục đích |
+| ------- | -------- |
+| `src/agent/` | Pipeline LangGraph (8 nodes: classifier, formalizer, solver, explanation × 2 types) |
+| `src/api/` | FastAPI endpoints (`/predict`, `/health`) |
+| `src/retrieval/` | Hybrid RAG (BM25 + vector + reranker) |
+| `scripts/data_prep/` | Build fine-tune datasets (coder.jsonl, instruct.jsonl) |
+| `scripts/distill/` | Build KB cho RAG (distill từ BTC + PhysicsFormulae) |
+| `scripts/rag/` | Build Qdrant index cho physics |
+| `data/finetune/` | ChatML datasets đã filter (sẵn sàng fine-tune) |
+| `data/distilled/` | Physics knowledge base (formulas + examples) |
+| `config/` | Cấu hình YAML + logging |
+
+---
+
+## 📖 Tài liệu chi tiết
+
+Tài liệu đầy đủ bằng tiếng Việt nằm tại:
+
+- **`Implementation/HUONG_DAN_TOAN_DIEN.md`** — Hướng dẫn toàn diện (1823 dòng) bao gồm:
+  - Bối cảnh cuộc thi EXACT 2026
+  - Kiến trúc hệ thống chi tiết
+  - Pipeline LangGraph từng node
+  - Hệ thống prompt engineering
+  - RAG cho vật lý
+  - Pipeline data prep & distillation
+  - HTTP API & config
+  - Tuân thủ BTC Q1–Q21
+  - Hướng dẫn cài đặt & chạy
+  - Trạng thái hiện tại & roadmap
+  - Lỗi đã biết & cheat sheet
 
 ---
 
 ## 📝 Giấy phép
 
-Dự án này được phát triển phục vụ cho cuộc thi/nghiên cứu **EXACT 2026**.
+Dự án này được phát triển phục vụ cho cuộc thi/nghiên cứu **EXACT 2026** tại IEEE IJCNN 2026.
 
 ---
