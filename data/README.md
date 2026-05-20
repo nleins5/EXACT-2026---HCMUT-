@@ -39,7 +39,7 @@ data/
 
 ## 2. finetune/ — Datasets đã preprocess (sẵn fine-tune)
 
-**Nguồn**: Xử lý từ `EXACT2026_dataset_2026-05-15/` + FOLIO + Electro
+**Nguồn**: Xử lý từ `EXACT2026_dataset_2026-05-15/` + FOLIO + Physics + Electro (nội bộ)
 
 | File | Records | Mục đích |
 |------|---------|----------|
@@ -49,22 +49,15 @@ data/
 | `instruct.eval.jsonl` | ~280 | Validation split (10%) |
 | `coder.STATS.md` / `instruct.STATS.md` | — | Báo cáo phân phối |
 
-**Nguồn bổ sung**:
-- **FOLIO** (yale-nlp/FOLIO): ~1,204 records premises-FOL → Z3 entailment
-- **Electro**: 242 bài điện từ từ textbook (đã verify code)
+**Nguồn dữ liệu**:
+| Source        | Records | Loại | Mô tả |
+| ------------- | ------: | ---- | ----- |
+| `folio`       |     177 | Bên ngoài | Dataset FOLIO (yale-nlp/FOLIO) - premises-FOL → Z3 |
+| `physics`     |   1,022 | Bên ngoài | Dataset Physics (yale-nlp/Physics) - LaTeX → SymPy |
+| `btc_physics` |   1,022 | BTC | Dataset BTC chính thức - Physics CSV → SymPy |
+| `electro`     |     192 | Nội bộ | Textbook điện từ (tự thu thập) → SymPy code |
 
-**Workflow**:
-```powershell
-# Regenerate datasets
-.\venv\Scripts\python.exe -m scripts.data_prep.prepare_coder_dataset
-.\venv\Scripts\python.exe -m scripts.data_prep.prepare_instruct_dataset
-```
-
-**Fine-tune trên Colab**:
-1. Zip `data/finetune/` → upload Drive
-2. Notebook 1: Coder (Qwen2.5-Coder-7B-Instruct)
-3. Notebook 2: Instruct (Qwen2.5-7B-Instruct)
-4. Export GGUF Q4_K_M → drop vào `models/`
+**Ghi chú**: `electro` là dataset **nội bộ** bạn tự thu thập từ textbook điện từ, **không phải** từ BTC hay từ GitHub/HuggingFace.
 
 ---
 
@@ -118,9 +111,11 @@ $env:GOOGLE_API_KEY = "<your-key>"
 
 | File | Mô tả |
 |------|-------|
-| `PhysicsFormulae_Compiled.json` | ~655KB cache từ [BenjaminTMilnes/PhysicsFormulae](https://github.com/BenjaminTMilnes/PhysicsFormulae) |
+| `PhysicsFormulae_Compiled.json` | Cache ~655KB từ [BenjaminTMilnes/PhysicsFormulae](https://github.com/BenjaminTMilnes/PhysicsFormulae) |
 
-**Filter**: giữ `Classical Electromagnetism` + `Electric Circuits`, bỏ mechanics/thermodynamics/optics/quantum.
+**Cách dùng**: File này được download bởi script `scripts/distill/fetch_physics_formulae.py` để trích xuất công thức vật lý. Không phải dataset để fine-tune.
+
+**Filter**: Giữ `Classical Electromagnetism` + `Electrical Circuits`, bỏ mechanics/thermodynamics/optics/quantum.
 
 **Constants**: `epsilon_0`, `mu_0`, `e`, `k_e`, `m_e`, `m_p`
 
@@ -135,12 +130,14 @@ $env:GOOGLE_API_KEY = "<your-key>"
 
 ---
 
-## Nguồn dataset gốc
+## Nguồn dataset bên ngoài
 
 | Dataset | Link | Mô tả |
 |---------|------|-------|
-| **Physics** | https://github.com/yale-nlp/Physics/tree/main/PHYSICS | Physics problems (FOLIO) |
-| **FOLIO** | https://huggingface.co/datasets/yale-nlp/P-FOLIO | Formal logic problems |
+| **FOLIO** | https://huggingface.co/datasets/yale-nlp/P-FOLIO | Formal logic problems (premises-FOL → Z3 entailment) |
+| **Physics** | https://github.com/yale-nlp/Physics/tree/main/PHYSICS | Physics problems (LaTeX → SymPy) |
+
+**Ghi chú**: `electro` là dataset **nội bộ** (textbook điện từ) do bạn thu thập thêm, không phải dataset bên ngoài.
 
 ---
 
