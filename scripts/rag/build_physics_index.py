@@ -106,7 +106,7 @@ def _load_verified(paths: list[Path]) -> list[KBRecord]:
     return out
 
 
-def _build_examples_collection(records: list[KBRecord]) -> None:
+def _build_examples_collection(records: list[KBRecord], vdb: VectorDBManager) -> None:
     """Build per-record collection (mot doc / record)."""
     docs = [
         Document(
@@ -124,13 +124,11 @@ def _build_examples_collection(records: list[KBRecord]) -> None:
         logger.warning(f"No verified records -> skipping {COLLECTION_EXAMPLES}")
         return
 
-    embed = EmbeddingFactory().get_embedding()
-    vdb = VectorDBManager(embedding_model=embed)
     vdb.add_documents(documents=docs, collection_name=COLLECTION_EXAMPLES)
     logger.info(f"OK: built '{COLLECTION_EXAMPLES}' voi {len(docs)} examples.")
 
 
-def _build_formulas_collection(records: list[KBRecord]) -> None:
+def _build_formulas_collection(records: list[KBRecord], vdb: VectorDBManager) -> None:
     """Build per-topic collection (mot doc / topic, gop formula).
 
     Dedup formula bang lower-case + strip whitespace.
@@ -174,9 +172,6 @@ def _build_formulas_collection(records: list[KBRecord]) -> None:
         logger.warning(f"No topics -> skipping {COLLECTION_FORMULAS}")
         return
 
-    # IMPORTANT: tao instance moi vi VectorDBManager._index cache theo instance.
-    embed = EmbeddingFactory().get_embedding()
-    vdb = VectorDBManager(embedding_model=embed)
     vdb.add_documents(documents=docs, collection_name=COLLECTION_FORMULAS)
     logger.info(
         f"OK: built '{COLLECTION_FORMULAS}' voi {len(docs)} topic blocks "
@@ -240,11 +235,15 @@ def main() -> None:
         print("FAIL: 0 verified records. Khong build.")
         sys.exit(1)
 
+    # Single VectorDBManager instance to avoid Qdrant file lock conflicts
+    embed = EmbeddingFactory().get_embedding()
+    vdb = VectorDBManager(embedding_model=embed)
+
     print("\n[1/2] Building per-record examples collection...")
-    _build_examples_collection(records)
+    _build_examples_collection(records, vdb)
 
     print("\n[2/2] Building per-topic formulas collection...")
-    _build_formulas_collection(records)
+    _build_formulas_collection(records, vdb)
 
     print("\nDone.")
 

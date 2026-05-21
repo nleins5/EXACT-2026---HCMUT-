@@ -122,10 +122,11 @@ def build_logic_records(verify: bool) -> list[dict]:
             "[LOGIC PROBLEM]\n\n"
             f"Premises:\n{format_premises_block(s.premises_nl, s.premises_fol)}\n\n"
             f"Conclusion:\n{s.conclusion_nl}\n\n"
-            f"Conclusion (FOL): {s.conclusion_fol}\n\n"
-            f"Expected label: {s.label}\n\n"
             "Write a Z3 Python script that decides whether the conclusion follows "
-            "from the premises. Print 'Predicted: <True|False|Unknown>'."
+            "from the premises using the negate-and-check-unsat pattern.\n"
+            "The script MUST end with: print(\"Predicted: True\") or "
+            "print(\"Predicted: False\") or print(\"Predicted: Unknown\").\n"
+            "Do NOT print 'Conclusion 1/2/3', 'Match:', or 'Expected:'."
         )
         records.append(
             chatml(

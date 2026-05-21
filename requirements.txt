@@ -29,3 +29,4 @@ sympy
 
 # Knowledge distillation (offline pipeline only - khong import o runtime)
 google-generativeai
+langchain-google-genai

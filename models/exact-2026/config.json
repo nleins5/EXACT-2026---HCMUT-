@@ -56,7 +56,7 @@
     "tie_word_embeddings": false,
     "unsloth_fixed": true,
     "unsloth_version": "2026.5.2",
-    "use_cache": true,
+    "use_cache": false,
     "use_sliding_window": false,
     "vocab_size": 152064
 }

@@ -72,10 +72,10 @@ class OpenAILLMClient(BaseLLM):
         return self._llm
 
     def get_structured_llm(self, output_schema: Type[BaseModel]) -> Any:
-        """Bind schema thong qua JSON mode (llama-server ho tro response_format).
+        """Tra ve LLM voi structured output (Pydantic schema enforcement).
 
-        Note: dung method="json_mode" thay vi "function_calling" vi llama-server
-        chua ho tro tool calls dang day du.
+        Dung with_structured_output cua LangChain — tu dong ep kieu
+        output theo Pydantic schema.
         """
         llm = self.get_llm()
-        return llm.with_structured_output(output_schema, method="json_mode")
+        return llm.with_structured_output(output_schema)

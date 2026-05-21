@@ -3,6 +3,7 @@ Logic Solver Node — Thực thi mã Z3 trong subprocess an toàn.
 
 Sau khi thực thi:
 - Nếu thành công  → set code_error=False, lưu stdout vào code_output.
+  Thêm: parse output để normalize prediction (True/False/Unknown).
 - Nếu thất bại    → set code_error=True,  lưu thông báo lỗi vào error_message.
 
 Solver KHÔNG raise — luôn để pipeline đi tiếp đến explanation node, node đó
@@ -12,6 +13,7 @@ import subprocess
 import sys
 from src.agent.state import AgentState
 from src.utils.logger import logger
+from src.utils.z3_output_parser import parse_z3_output
 
 
 def logic_solver_node(state: AgentState) -> dict:
@@ -31,10 +33,14 @@ def logic_solver_node(state: AgentState) -> dict:
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode == 0:
-            intermediate["code_output"] = result.stdout.strip()
+            raw_output = result.stdout.strip()
+            # Parse and normalize the Z3 output
+            prediction = parse_z3_output(raw_output)
+            # Store both raw output and normalized prediction
+            intermediate["code_output"] = f"Predicted: {prediction}"
             intermediate["code_error"] = False
             intermediate["error_message"] = ""
-            logger.info(f"Z3 Solver OK: {intermediate['code_output'][:200]}")
+            logger.info(f"Z3 Solver OK: {raw_output[:200]} -> Normalized: Predicted: {prediction}")
         else:
             intermediate["code_output"] = result.stdout.strip()
             intermediate["code_error"] = True
@@ -53,3 +59,4 @@ def logic_solver_node(state: AgentState) -> dict:
         logger.error(f"Z3 Solver exception: {e}")
 
     return {"intermediate_answer": intermediate}
+

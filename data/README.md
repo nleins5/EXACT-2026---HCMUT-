@@ -1,118 +1,105 @@
 # data/
 
-Thư mục này chứa toàn bộ dữ liệu cho project EXACT-2026.
+Thư mục chứa toàn bộ dữ liệu cho project EXACT-2026.
 
 ## Cấu trúc
 
 ```
 data/
-├── README.md                           # File này
-├── EXACT2026_dataset_2026-05-15/     # Dataset chính thức BTC (source gốc)
-├── finetune/                           # Datasets đã preprocess (sẵn FT)
-├── distilled/                          # Physics KB cho RAG
-├── collected/                          # Dữ liệu thu thập thêm (electro)
-├── external/                           # External resources (PhysicsFormulae)
-├── EXACT_Slides.pdf                    # Slide BTC chính thức
-└── QA.pdf                              # Q&A BTC (Q1–Q21)
+├── EXACT2026_dataset_2026-05-15/   # Dataset gốc BTC (không chỉnh sửa)
+├── collected/                       # Dữ liệu thu thập từ bên ngoài
+├── distilled/                       # Physics KB cho RAG (output từ scripts/distill/)
+├── external/                        # Cache external resources
+├── finetune/                        # Datasets ChatML cho fine-tune
+├── EXACT_Slides.pdf                 # Slide BTC chính thức
+├── QA.pdf                           # Q&A BTC (Q1–Q21)
+└── README.md                        # File này
 ```
 
-## Mục đích
+---
 
-Thư mục `data/` chứa:
-- **Dataset gốc**: BTC dataset (Type 1 + Type 2)
-- **Dataset đã preprocess**: ChatML format cho fine-tune
-- **Physics KB**: Knowledge base cho RAG
-- **External resources**: PhysicsFormulae, Electro dataset
+## EXACT2026_dataset_2026-05-15/
 
-## Cấu trúc chi tiết
-
-### EXACT2026_dataset_2026-05-15/
-
-Dataset chính thức từ BTC (source gốc).
-
-| Thư mục | Mô tả |
-|--------|-------|
-| `Logic_Based_Educational_Queries_Text_Only/` | 411 records / 808 câu hỏi Type 1 |
-| `Physics_Problems_Text_Only/` | 1,352 bài Type 2 (đã filter `QA-`) |
-
-**Files**:
-- `Logic_Based_Educational_Queries.json` — Type 1 với premises-NL + FOL
-- `Physics_Problems_Text_Only.csv` — Type 2 với question + cot + answer + unit
-- `CHANGELOG_TYPE1.md` / `CHANGELOG_TYPE2.md` — Lịch sử fix bug
-
-**Ghi chú**: Đây là dataset gốc, **KHÔNG commit lên git** (file lớn).
-
-### finetune/
-
-Datasets đã preprocess (ChatML format) cho fine-tune.
-
-| File | Records | Mục đích |
-|------|---------|----------|
-| `coder.jsonl` | ~1,391 | Train Coder sinh code Z3/SymPy |
-| `coder.eval.jsonl` | ~155 | Validation split (10%) |
-| `instruct.jsonl` | ~2,518 | Train Instruct sinh JSON ExactResponse |
-| `instruct.eval.jsonl` | ~280 | Validation split (10%) |
-
-**Nguồn**: BTC Physics + FOLIO + Physics + Electro
-
-**Cách sinh**:
-```powershell
-.\venv\Scripts\python.exe -m scripts.data_prep.prepare_coder_dataset
-.\venv\Scripts\python.exe -m scripts.data_prep.prepare_instruct_dataset
-```
-
-**Fine-tune**: Xem `fine_tune/README.md`
-
-### distilled/
-
-Physics KB cho RAG (knowledge base).
-
-| File | Tracked? | Mô tả |
-|------|----------|-------|
-| `physics_kb.from_pf.jsonl` | ✅ git | 22 formulas + 6 constants = 28 records |
-| `physics_kb.raw.jsonl` | ❌ ignore | Output thô teacher LLM |
-| `physics_kb.verified.jsonl` | ❌ ignore | Sau khi exec SymPy |
-| `cost_log.jsonl` | ❌ ignore | Token + latency log |
-
-**Pipeline**:
-```powershell
-.\venv\Scripts\python.exe -m scripts.distill.distill_physics --source all
-.\venv\Scripts\python.exe -m scripts.distill.verify_kb
-.\venv\Scripts\python.exe -m scripts.distill.fetch_physics_formulae --include-constants
-.\venv\Scripts\python.exe -m scripts.rag.build_physics_index --rebuild
-```
-
-**Xem thêm**: `distilled/README.md`
-
-### collected/
-
-Dữ liệu thu thập thêm (textbook điện từ).
-
-| File | Records | Mô tả |
-|------|---------|-------|
-| `electro_dataset.jsonl` | 242 | Bài điện từ (raw) |
-| `electro_sympy_dataset.jsonl` | 242 | Bài điện từ + SymPy code đã verify |
-
-**Ghi chú**: Đây là dataset **nội bộ** (không từ BTC), do bạn thu thập thêm.
-
-### external/
-
-External resources.
+Dataset chính thức từ Ban Tổ Chức (BTC). **Giữ nguyên gốc, không chỉnh sửa.**
 
 | File | Mô tả |
-|------|-------|
-| `PhysicsFormulae_Compiled.json` | Cache ~655KB từ PhysicsFormulae GitHub |
+|------|--------|
+| `Physics_Problems_Text_Only/Physics_Problems_Text_Only.csv` | 1,352 bài vật lý Type 2 (question, cot, answer, unit) |
+| `Logic_Based_Educational_Queries_Text_Only/Logic_Based_Educational_Queries.json` | 411 records / 808 câu hỏi Type 1 (premises NL + FOL) |
+| `CHANGELOG_TYPE1.md` / `CHANGELOG_TYPE2.md` | Lịch sử fix bug từ BTC |
 
-**Cách dùng**: File này được download bởi `scripts/distill/fetch_physics_formulae.py`.
+**Nguồn**: BTC EXACT 2026 (phát hành 2026-05-15).
 
-### EXACT_Slides.pdf & QA.pdf
+---
 
-- `EXACT_Slides.pdf`: Slide BTC chính thức (scope, format, rules)
-- `QA.pdf`: Q&A BTC (Q1–Q21) — quy tắc kỹ thuật quan trọng
+## collected/
+
+Dữ liệu thu thập từ **bên ngoài** (không phải BTC), phục vụ training và RAG.
+
+| File | Records | Nguồn gốc | Tạo bởi script |
+|------|---------|------------|-----------------|
+| `electro_dataset.jsonl` | 242 | Textbook điện từ (thu thập thủ công) | — (raw data) |
+| `electro_sympy_dataset.jsonl` | 242 | Sinh từ `electro_dataset.jsonl` | `scripts/convert_physics_to_sympy.py --generate` |
+| `train.jsonl` | 1,083 | [yale-nlp/FOLIO](https://huggingface.co/datasets/yale-nlp/FOLIO) (HuggingFace) | `scripts/convert_logic_to_z3.py --output-dir data/collected` |
+| `val.jsonl` | 121 | [yale-nlp/FOLIO](https://huggingface.co/datasets/yale-nlp/FOLIO) (HuggingFace) | (cùng script trên, validation split 10%) |
+
+**Chi tiết:**
+- `electro_dataset.jsonl`: Bài toán điện từ từ sách giáo khoa, format JSON (`id`, `questions`, `solutions`, `final_answers`, `graphs`).
+- `electro_sympy_dataset.jsonl`: Phiên bản đã thêm SymPy verification code (sinh bằng heuristic converter).
+- `train.jsonl` / `val.jsonl`: FOLIO FOL premises → executable Z3 Python code. Format Alpaca (`instruction`, `input`, `output`, `source`, `id`).
+
+---
+
+## distilled/
+
+Knowledge base cho **physics RAG node**. Output được tạo tự động bằng scripts.
+
+| File | Records | Nguồn gốc | Tạo bởi script |
+|------|---------|------------|-----------------|
+| `physics_kb.formulas.jsonl` | 363 | BTC Physics CSV (1,352 bài) | `scripts/distill/extract_formulas.py` (Gemini 2.5 Flash-Lite API) |
+| `physics_kb.from_pf.jsonl` | 29 | [PhysicsFormulae](https://github.com/BenjaminTMilnes/PhysicsFormulae) | `scripts/distill/fetch_physics_formulae.py` |
+
+**Pipeline tái tạo:**
+```powershell
+# Extract formulas từ BTC CSV qua Gemini API
+python -m scripts.distill.extract_formulas run --batch-size 50
+
+# Build RAG index (Qdrant)
+python -m scripts.rag.build_physics_index --input data/distilled/physics_kb.formulas.jsonl --rebuild
+```
+
+Xem thêm: `distilled/README.md`
+
+---
+
+## external/
+
+Cache external resources (download 1 lần, dùng lại).
+
+| File | Nguồn gốc |
+|------|------------|
+| `PhysicsFormulae_Compiled.json` | [BenjaminTMilnes/PhysicsFormulae](https://github.com/BenjaminTMilnes/PhysicsFormulae) — file `Compiled.json` (~655KB) |
+
+**Dùng bởi**: `scripts/distill/fetch_physics_formulae.py`
+
+---
+
+## finetune/
+
+Datasets đã preprocess (ChatML format) cho fine-tune model.
+
+| File | Records | Mô tả | Tạo bởi script |
+|------|---------|--------|-----------------|
+| `coder.jsonl` | ~1,391 | Train Coder (Z3 + SymPy) | `scripts/data_prep/prepare_coder_dataset.py` |
+| `coder.eval.jsonl` | ~155 | Validation split 10% | (cùng script trên) |
+| `instruct.jsonl` | ~2,518 | Train Instruct (JSON response) | `scripts/data_prep/prepare_instruct_dataset.py` |
+| `instruct.eval.jsonl` | ~280 | Validation split 10% | (cùng script trên) |
+
+**Nguồn dữ liệu**: BTC Physics + BTC Logic + Electro collected + FOLIO.
+
+---
 
 ## Quy tắc commit
 
-- ✅ **Commit**: changelog, `physics_kb.from_pf.jsonl`, `README.md`
-- ❌ **Ignore**: dataset lớn, output regen được, logs, models, storage
-
-Xem `.gitignore` chi tiết.
+- ✅ Commit: `README.md`, `physics_kb.from_pf.jsonl`, changelogs
+- ❌ Ignore: dataset lớn (BTC, finetune), output regen được, logs, models

@@ -15,7 +15,7 @@ This model was finetuned and converted to GGUF format using [Unsloth](https://gi
 - For multimodal models: `llama-mtmd-cli -hf HoangKhangHCMUS/exact-2026 --jinja`
 
 ## Available Model files:
-- `Qwen2.5-7B-Instruct.Q4_K_M.gguf`
+- `qwen2.5-coder-7b-instruct.Q4_K_M.gguf`
 
 ## Ollama
 An Ollama Modelfile is included for easy deployment.
