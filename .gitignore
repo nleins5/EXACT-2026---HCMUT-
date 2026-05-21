@@ -41,3 +41,9 @@ data/
 *.gguf 
 *.safetensors
 *.bin 
+
+# ────────────────────────────────────────────────────────────────────
+# Compiled local binary executables & libraries
+# ────────────────────────────────────────────────────────────────────
+bin/
+bin/llama-cpp/

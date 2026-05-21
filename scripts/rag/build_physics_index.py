@@ -32,7 +32,7 @@ from llama_index.core import Document  # noqa: E402
 
 from src.agent.llm.embedding import EmbeddingFactory  # noqa: E402
 from src.core.config import settings  # noqa: E402
-from src.distillation.schema import KBRecord  # noqa: E402
+from scripts.distill.schema import KBRecord  # noqa: E402
 from src.retrieval.vector_db import VectorDBManager  # noqa: E402
 from src.utils.logger import logger  # noqa: E402
 

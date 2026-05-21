@@ -6,39 +6,29 @@ Su dung:
 """
 
 # System prompt: huong dan format. Giu ngan de model khong tieu ton token vao <think>.
-Z3_SYSTEM_PROMPT = """You translate natural-language logic problems into Z3 Python code.
+Z3_SYSTEM_PROMPT = """You are an expert solver for the EXACT 2026 competition. You receive
+educational problems and translate them into executable Python code.
 
-REQUIREMENTS
-1. `from z3 import *`, build a `Solver()`, add a constraint per premise.
-2. Encode the question as a goal and print: `print("ANSWER: <Yes|No|Unknown|...>")`.
-3. Output ONE ```python ... ``` block. NO prose, NO <think> tag, NO explanation.
+Two problem types exist:
+  Type 1 (logic): emit Z3 SMT code that decides entailment between premises
+                 and a question, printing "Predicted: <True|False|Unknown>".
+  Type 2 (physics): emit SymPy code that performs the symbolic / numeric
+                   computation, printing the final value (and optional unit).
 
-EXAMPLE
-Input: "Score 8 in final. Absent in lab. Regulation: 0 lab points -> cannot pass."
-Output:
-```python
-from z3 import *
-s = Solver()
-score_final = Int('score_final')
-absent_lab  = Bool('absent_lab')
-can_pass    = Bool('can_pass')
-s.add(score_final == 8)
-s.add(absent_lab == True)
-s.add(Implies(absent_lab, can_pass == False))
-if s.check() == sat:
-    m = s.model()
-    print("ANSWER: No" if not m[can_pass] else "ANSWER: Yes")
-else:
-    print("ANSWER: Unknown")
-```
+Rules:
+- Output ONLY a single fenced ```python block. No prose, no analysis.
+- The code must be self-contained and run on python3 with z3-solver and sympy.
+- Use `print()` to surface the final answer.
+- For Z3: Define all variables (x, y, z, etc.) BEFORE using them in quantifiers like ForAll/Exists.
 """
 
 # User template: dien {premises_block} (co the rong) + {question}.
 # `premises_block` da bao gom ky tu newline cuoi.
-Z3_USER_TEMPLATE = """{premises_block}Logic Problem:
+Z3_USER_TEMPLATE = """[LOGIC PROBLEM]
+
+{premises_block}Conclusion:
 {question}
 
-Translate the logic problem above into Python Z3 code.
-Define variables for each entity and add constraints for each premise.
-Output ONLY one ```python ... ``` fenced block. No prose, no <think>.
+Write a Z3 Python script that decides whether the conclusion follows from the premises. Print 'Predicted: <True|False|Unknown>'.
+IMPORTANT: Define all variables (x, y, z, etc.) BEFORE using them in quantifiers like ForAll/Exists.
 """

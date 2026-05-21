@@ -2,8 +2,8 @@
 
 Total samples: **2798**
 
-Average chars per record: **5075**
-P95 chars per record: **7666**
+Average chars per record: **4949**
+P95 chars per record: **7127**
 
 ## By source
 | Key | Count | % |

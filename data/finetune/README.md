@@ -59,7 +59,7 @@ Hai bộ phục vụ **2 model khác nhau** trong pipeline 2-specialist của EX
     "messages": [
       {"role": "system",    "content": "You are the explanation engine ..."},
       {"role": "user",      "content": "[LOGIC|PHYSICS PROBLEM] ... Solver code: ```...``` Solver stdout/error: ```...```"},
-      {"role": "assistant", "content": "{\"answer\":\"...\",\"explanation\":\"...\",\"fol\":[...]|null,\"cot\":\"...\"|null,\"premises\":[\"Premise 1: ...\"],\"confidence\":0.92}"}
+      {"role": "assistant", "content": "{\"answer\":\"...\",\"explanation\":\"...\",\"fol\":\"...\"|null,\"cot\":[\"...\",\"...\"]|null,\"premises\":[\"Premise 1: ...\"],\"confidence\":0.92}"}
     ],
     "meta": {"source": "...", "type": "logic|physics", "branch": "success|error", "uid": "..."}
   }
@@ -231,19 +231,19 @@ Xem `fine_tune/README.md` để biết chi tiết workflow fine-tune trên Googl
 
 ---
 
-## Schema `ExactResponse` (đối chiếu với `src/api/schemas.py`)
+## Schema `ExactResponse` (đối chiếu với `src/api/schemas.py` + EXACT_Slides.pdf p.33)
 
 ```json
 {
   "answer": "string",
   "explanation": "string",
-  "fol":   ["string", ...] | null,
-  "cot":   "string" | null,
+  "fol":   "string"  | null,
+  "cot":   ["string", ...] | null,
   "premises": ["Premise 1: ...", "Premise 2: ..."],
   "confidence": 0.0-1.0
 }
 ```
 
-- Logic problems: `fol` populated, `cot` = null.
-- Physics problems: `cot` populated, `fol` = null.
+- Logic problems: `fol` populated (single FOL formula string của conclusion), `cot` = null.
+- Physics problems: `cot` populated (list các step strings tách từ CoT), `fol` = null.
 - Hệ thống chấm sẽ parse JSON này để tính P1 (correctness) + P2 (explanation) + P3 (reasoning depth).

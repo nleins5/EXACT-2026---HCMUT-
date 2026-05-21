@@ -12,11 +12,16 @@ and produces a JSON response matching the `ExactResponse` schema in
     {
       "answer": "...",
       "explanation": "...",
-      "fol":  ["..."]   | null,
-      "cot":  "..."     | null,
+      "fol":  "..."     | null,
+      "cot":  ["..."]   | null,
       "premises": ["Premise 1: ...", ...],
       "confidence": 0.85
     }
+
+Note on `fol` / `cot` typing (mirrors EXACT_Slides.pdf p.33 + src/api/schemas.py):
+  - `fol` is a single FOL formula string (e.g. `"ForAll(x, P(x) -> Q(x))"`).
+  - `cot` is a list of step strings (e.g. `["Step 1: ...", "Step 2: ..."]`).
+Logic problems populate `fol` and leave `cot=null`; physics problems do the opposite.
 
 Two branches are produced to mirror the runtime two-prompt strategy in
 `src/agent/nodes/*_explanation.py`:
@@ -82,16 +87,18 @@ SYS_INSTRUCT = textwrap.dedent("""
       {
         "answer": "<final answer string>",
         "explanation": "<concise reasoning paragraph>",
-        "fol":   ["<formal logic formula>", ...] | null,
-        "cot":   "<step by step thought>"        | null,
+        "fol":   "<single FOL formula string>"             | null,
+        "cot":   ["<step 1>", "<step 2>", ...]             | null,
         "premises": ["Premise 1: ...", "Premise 2: ...", ...],
         "confidence": <float between 0 and 1>
       }
 
     Rules:
     - Output ONLY the JSON object. No markdown fences. No prose outside the JSON.
-    - For logic problems, populate `fol` and `premises`; set `cot` to null.
-    - For physics problems, populate `cot` and `premises`; set `fol` to null.
+    - For logic problems, populate `fol` (one formula string) and `premises`;
+      set `cot` to null.
+    - For physics problems, populate `cot` (a list of step strings) and
+      `premises`; set `fol` to null.
     - If the solver output contains an error, derive the answer from your own
       reasoning over the problem text and explain that the solver failed.
 """).strip()
@@ -105,12 +112,17 @@ def _exact_response(
     *,
     answer: str,
     explanation: str,
-    fol: list[str] | None,
-    cot: str | None,
+    fol: str | None,
+    cot: list[str] | None,
     premises: list[str],
     confidence: float,
 ) -> str:
-    """Render an ExactResponse JSON object as a compact string."""
+    """Render an ExactResponse JSON object as a compact string.
+
+    Schema mirrors `src/api/schemas.py::PredictResponse` (BTC slide 33):
+        fol: single FOL formula string, e.g. "ForAll(x, P(x) -> Q(x))".
+        cot: list of reasoning step strings, e.g. ["Step 1...", "Step 2..."].
+    """
     obj = {
         "answer": answer,
         "explanation": explanation,
@@ -120,6 +132,29 @@ def _exact_response(
         "confidence": round(confidence, 2),
     }
     return json.dumps(obj, ensure_ascii=False)
+
+
+def _split_to_steps(text: str, *, max_steps: int = 8, max_chars: int = 400) -> list[str]:
+    """Convert a free-form CoT/solution paragraph into a list of step strings.
+
+    Splits on newlines first; if the result is a single line, fall back to
+    sentence boundaries. Each step is hard-truncated to keep records bounded.
+    Returns an empty list for empty input so callers can pass `None` to JSON.
+    """
+    if not text or not text.strip():
+        return []
+    # First try newline-based split (handles "Step 1:\nStep 2:\n" and bullet lists).
+    raw = [s.strip("•-* \t") for s in text.split("\n") if s.strip()]
+    if len(raw) < 2:
+        # Fall back to sentence split on ". " (avoid splitting decimals like 3.14).
+        import re as _re
+        raw = [s.strip() for s in _re.split(r"(?<=[a-zA-Z\)])\.\s+", text) if s.strip()]
+    steps: list[str] = []
+    for s in raw[:max_steps]:
+        if len(s) > max_chars:
+            s = s[: max_chars - 1] + "…"
+        steps.append(s)
+    return steps
 
 
 def _format_premises_for_response(premises_nl: list[str]) -> list[str]:
@@ -191,10 +226,15 @@ def _logic_target(s: FolioSample, *, code_error: bool, code_output: str) -> str:
         )
         confidence = 0.92
 
+    # `fol` is a single FOL formula (slide 33). For FOLIO entailment we use
+    # the conclusion's FOL as the salient formula; the premise FOLs already
+    # appear in the `premises` block via `format_premises_block`.
+    fol_formula: str | None = s.conclusion_fol.strip() if s.conclusion_fol else None
+
     return _exact_response(
         answer=answer,
         explanation=truncate(explanation, 1500),
-        fol=s.premises_fol if s.premises_fol else None,
+        fol=fol_formula,
         cot=None,
         premises=_format_premises_for_response(s.premises_nl),
         confidence=confidence,
@@ -281,11 +321,15 @@ def _physics_target(q: PhysicsQA, *, code_error: bool, code_output: str) -> str:
     else:
         premises = [f"Premise 1: {q.question}"]
 
+    # `cot` is a list of step strings (slide 33). Split the BTC CoT paragraph
+    # into steps so the model learns the correct shape.
+    cot_steps = _split_to_steps(q.cot) if q.cot else []
+
     return _exact_response(
         answer=q.final_answer,
         explanation=truncate(explanation, 1500),
         fol=None,
-        cot=truncate(q.cot, 1500) if q.cot else None,
+        cot=cot_steps or None,
         premises=premises,
         confidence=confidence,
     )
@@ -386,11 +430,14 @@ def build_electro_records(error_ratio: float, rng: random.Random) -> list[dict]:
             f"Premise 1: {truncate(s.question, 400)}"
         ]
 
+        # Split the textbook solution into ordered step strings for `cot`.
+        cot_steps = _split_to_steps(s.solution)
+
         target = _exact_response(
             answer=truncate(final, 200),
             explanation=truncate(explanation, 1500),
             fol=None,
-            cot=truncate(s.solution, 1500),
+            cot=cot_steps or None,
             premises=premises,
             confidence=confidence,
         )

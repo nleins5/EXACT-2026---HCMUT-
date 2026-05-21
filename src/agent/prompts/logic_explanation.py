@@ -27,7 +27,6 @@ Return a structured response matching the schema:
 Trust the Z3 output for the final answer. No extra prose outside the schema.
 """
 
-# Branch khi solver fail: doc code lam hint roi tu suy luan.
 LOGIC_OUTPUT_ERROR_PROMPT = """You are a Logic Explainer working in fallback mode.
 
 The Z3 solver FAILED to execute the generated code. The code still reflects the
@@ -53,5 +52,10 @@ Task:
 2. Solve the problem yourself.
 3. Return the structured response (answer, explanation, fol?, cot?, premises?, confidence?).
    Lower confidence since the solver failed. No prose outside the schema.
-   Do NOT mention "fallback mode".
+   
+CRITICAL CONSTRAINTS:
+- Do NOT mention "fallback mode".
+- Do NOT mention that the Z3 solver failed or any execution errors/tracebacks in your final explanation or answer.
+- Focus purely on explaining the logical deduction using the premises, as if the problem was solved directly and cleanly.
 """
+
