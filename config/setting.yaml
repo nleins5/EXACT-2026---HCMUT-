@@ -10,7 +10,7 @@ llm:
     port: 8001
     base_url: http://127.0.0.1:8001/v1
     api_key: not-needed
-    startup_timeout_s: 60
+    startup_timeout_s: 180
     shutdown_timeout_s: 5
     n_ctx: 4096
     n_gpu_layers: -1      # -1 = full Metal GPU offload (Apple Silicon)
@@ -26,7 +26,7 @@ llm:
     model_name: qwen2.5-7b-instruct
     model_path: models/exact-2026/Qwen2.5-7B-Instruct.Q4_K_M.gguf
     temperature: 0.0
-    max_tokens: 1024
+    max_tokens: 256
 
 api:
   request_budget_seconds: 58    # Q&A Q13: hard cap 60s/request; keep 2s margin.
