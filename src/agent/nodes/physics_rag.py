@@ -15,6 +15,8 @@ Format ket qua thanh 2 section ro rang trong context_block:
 Khi corpus chua build hoac retrieval that bai -> tra ve context="" (no-op fallback).
 Formalizer se chay binh thuong khong co RAG.
 """
+from pathlib import Path
+
 from src.agent.state import AgentState
 from src.utils.logger import logger
 
@@ -26,6 +28,16 @@ PHYSICS_FORMULAS_COLLECTION = "physics_formulas"
 TOP_K_EXAMPLES = 2
 TOP_K_FORMULAS = 1
 INITIAL_CANDIDATES = 12  # truoc rerank
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_STORAGE_ROOT = _PROJECT_ROOT / "storage"
+
+
+def _rag_index_available() -> bool:
+    """Avoid loading large embedding/reranker models when no index was shipped."""
+    return any(
+        (_STORAGE_ROOT / collection / "docstore.json").exists()
+        for collection in (PHYSICS_EXAMPLES_COLLECTION, PHYSICS_FORMULAS_COLLECTION)
+    )
 
 
 def _format_context(formula_docs, example_docs) -> str:
@@ -56,6 +68,10 @@ def physics_rag_node(state: AgentState) -> dict:
     Output:
         state["context"] = chuoi 2 section (co the rong neu retrieval fail).
     """
+    if not _rag_index_available():
+        logger.info("Physics RAG index is not available; skipping retrieval.")
+        return {"context": ""}
+
     try:
         from src.retrieval.engine import Retriever
         retriever = Retriever.get_instance()

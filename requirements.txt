@@ -17,6 +17,7 @@ qdrant-client
 
 # Embeddings + reranker
 sentence-transformers
+huggingface-hub
 
 # HTTP
 fastapi

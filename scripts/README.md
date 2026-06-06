@@ -15,15 +15,9 @@ scripts/
 │   ├── _common.py                  # Loaders + ChatML formatter + verify exec
 │   ├── prepare_coder_dataset.py    # → data/finetune/coder.jsonl
 │   └── prepare_instruct_dataset.py # → data/finetune/instruct.jsonl
-├── distill/                        # Knowledge distillation cho RAG
-│   ├── __init__.py
-│   ├── distill_physics.py          # Teacher LLM → physics_kb.raw.jsonl
-│   ├── verify_kb.py                # Exec SymPy → mark verified
-│   └── fetch_physics_formulae.py   # Pull công thức từ PhysicsFormulae GitHub
-└── rag/                            # Build vector index + smoke test
+└── rag/                            # Build vector index
     ├── __init__.py
-    ├── build_physics_index.py      # JSONL → 2 collection Qdrant
-    └── smoke_rag.py                # Test 3 query (Coulomb / out-scope / RLC)
+    └── build_physics_index.py      # Verified JSONL → 2 collection Qdrant
 ```
 
 ## Mục đích
@@ -31,7 +25,6 @@ scripts/
 Thư mục `scripts/` chứa:
 - **Engine chuyển đổi**: FOL → Z3, LaTeX → SymPy
 - **Pipeline data prep**: Build dataset fine-tune (coder.jsonl, instruct.jsonl)
-- **Pipeline distillation**: Build Physics KB cho RAG
 - **Pipeline RAG**: Build vector index Qdrant
 
 ## Chi tiết từng module
@@ -79,50 +72,23 @@ Pipeline build dataset fine-tune.
 .\venv\Scripts\python.exe -m scripts.data_prep.prepare_instruct_dataset
 ```
 
-### distill/
-
-Knowledge extraction cho RAG. Closed-source LLM APIs are prohibited; any teacher
-pipeline must be self-hosted/open-source and fully disclosed before use.
-
-| File | Mục đích |
-|------|----------|
-| `distill_physics.py` | Disabled unless replaced by an auditable open-source/self-hosted extraction pipeline |
-| `verify_kb.py` | Exec SymPy code, mark `verified=true/false` |
-| `fetch_physics_formulae.py` | Crawl PhysicsFormulae GitHub |
-
-**Output**:
-- `data/distilled/physics_kb.raw.jsonl`
-- `data/distilled/physics_kb.verified.jsonl`
-- `data/distilled/physics_kb.from_pf.jsonl` (28 records, commit lên git)
-
-**Cách dùng**:
-```powershell
-.\venv\Scripts\python.exe -m scripts.distill.distill_physics --source all
-.\venv\Scripts\python.exe -m scripts.distill.verify_kb
-.\venv\Scripts\python.exe -m scripts.distill.fetch_physics_formulae --include-constants
-```
-
 ### rag/
 
-Build vector index Qdrant.
+Build vector index Qdrant từ một JSONL corpus đã verified và fully disclosed.
 
 | File | Mục đích |
 |------|----------|
 | `build_physics_index.py` | Build 2 collection: `physics_examples` + `physics_formulas` |
-| `smoke_rag.py` | Test retrieval với 3 query |
-
 **Cách dùng**:
 ```powershell
-.\venv\Scripts\python.exe -m scripts.rag.build_physics_index --rebuild
-.\venv\Scripts\python.exe -m scripts.rag.smoke_rag
+.\venv\Scripts\python.exe -m scripts.rag.build_physics_index --input data/distilled/physics_kb.verified.jsonl --rebuild
 ```
 
 ## Workflow tổng
 
 ```
 BTC Data → data_prep → coder.jsonl/instruct.jsonl → fine_tune → GGUF
-BTC/Electro → deterministic/open-source extraction → physics_kb → rag → Qdrant index → runtime RAG
-PhysicsFormulae → fetch_physics_formulae → physics_kb
+Disclosed verified JSONL → rag → Qdrant index → runtime RAG
 ```
 
 ## Yêu cầu
@@ -132,5 +98,4 @@ pip install -r requirements.txt
 ```
 
 - **data_prep**: `datasets`, `z3-solver`, `sympy`, `pandas`, `python-dotenv`
-- **distill**: closed-source provider SDKs are prohibited; do not install GPT/Claude/Gemini clients
 - **rag**: `qdrant-client`, `llama-index`, `FlagEmbedding`

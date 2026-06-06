@@ -3,6 +3,7 @@
 import os
 import sys
 from pathlib import Path
+from typing import Literal
 
 
 sys.path.append(str(Path(__file__).parents[2]))
@@ -84,11 +85,15 @@ class LangsmithConfig(BaseModel):
 class APIConfig(BaseModel):
     """HTTP layer config."""
     request_budget_seconds: int = 58
+    cancellation_grace_seconds: float = 3.0
+    min_explanation_seconds: float = 20.0
+    warmup_role: Literal["coder", "instruct"] | None = "coder"
 
 
 class SolverConfig(BaseModel):
     timeout_s: int = 20
     max_retries: int = 1
+    memory_mb: int = 1536
 
 
 class AppConfig(BaseModel):

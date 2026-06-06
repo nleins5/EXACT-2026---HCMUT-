@@ -4,10 +4,13 @@ Tuong tu logic_explanation: 2 nhanh prompt theo `code_error`.
 """
 from src.agent.state import AgentState
 from src.agent.schema import ExactResponse
+from src.agent.nodes.fallbacks import extract_physics_answer, physics_solver_fallback
 from src.agent.prompts.physics_explanation import (
     PHYSICS_OUTPUT_PROMPT,
     PHYSICS_OUTPUT_ERROR_PROMPT,
 )
+from src.agent.runtime import remaining_seconds
+from src.core.config import settings
 from src.utils.logger import logger
 
 
@@ -15,6 +18,10 @@ def physics_explanation_node(state: AgentState) -> dict:
     """Sinh ExactResponse JSON tu code_output (success) hoac code (error)."""
     intermediate = state.get("intermediate_answer", {})
     code_error = intermediate.get("code_error", False)
+
+    if remaining_seconds() < settings.api.min_explanation_seconds:
+        logger.warning("Skipping physics explanation model because the request budget is low.")
+        return physics_solver_fallback(state, "Explanation model skipped due to request budget.")
 
     try:
         from src.agent.llm.factory import LLMFactory
@@ -42,18 +49,17 @@ def physics_explanation_node(state: AgentState) -> dict:
             logger.info("Physics explanation: dung SUCCESS prompt.")
 
         response: ExactResponse = structured_llm.invoke(prompt)
-        return {"final_answer": response.model_dump()}
+        final_answer = response.model_dump()
+        if not code_error:
+            verified_answer = extract_physics_answer(intermediate.get("code_output", ""))
+            if verified_answer:
+                final_answer["answer"] = verified_answer
+                final_answer["confidence"] = max(
+                    float(final_answer.get("confidence") or 0.0),
+                    0.8,
+                )
+        return {"final_answer": final_answer}
 
     except Exception as e:
         logger.error(f"physics_explanation_node loi: {e}")
-        return {
-            "final_answer": {
-                "answer": "Error",
-                "explanation": f"Loi he thong: {e}",
-                "fol": "",
-                "cot": [],
-                "premises": [],
-                "confidence": 0.0,
-            },
-            "error": str(e),
-        }
+        return physics_solver_fallback(state, str(e))

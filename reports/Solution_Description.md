@@ -10,10 +10,10 @@ The submitted service exposes one FastAPI endpoint, `/predict`, for the unified 
 | Stage | Engineering role | Reliability control |
 |---|---|---|
 | Classifier | Selects logic or physics path without an LLM call. | Deterministic schema-based routing. |
-| Retrieval | For physics, retrieves formulas and worked examples from disclosed corpora. | Hybrid BM25/vector search with reranking. |
+| Retrieval | For physics, optionally retrieves formulas and worked examples from a provisioned disclosed corpus. | Hybrid BM25/vector search with reranking; skipped immediately when no index is deployed. |
 | Formalizer | Generates Z3 code for logic or SymPy code for physics. | Self-hosted open-source coder model; no external LLM API. |
-| Solver | Executes the generated program and returns the symbolic/numeric result. | Subprocess isolation, timeout budget, and one execution-feedback retry. |
-| Explainer | Converts the solver result into the official response schema. | Explanation is conditioned on code, premises, retrieved evidence, and solver output. |
+| Solver | Executes the generated program and returns the symbolic/numeric result. | AST allowlist, isolated Python mode, CPU/memory/output limits, timeout, and one execution-feedback retry. |
+| Explainer | Converts the solver result into the official response schema. | Explanation is grounded in solver evidence; deterministic solver fallback preserves verified answers when the model is unavailable or the time budget is low. |
 
 ## Evaluation Alignment
 The system is optimized around the three scoring dimensions. For **P1 correctness**, answer selection is anchored to symbolic execution rather than unconstrained text. For **P2 explanation quality**, the response explains the applicable law, premise chain, or calculation path in natural language. For **P3 reasoning depth**, the API returns structured evidence fields: `fol`, `cot` as a concise derivation summary, `premises`, and calibrated `confidence`. The API sanitizer enforces valid output types, clamps confidence to `[0, 1]`, and guarantees non-empty mandatory `answer` and `explanation` fields.

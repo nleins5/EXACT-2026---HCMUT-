@@ -23,9 +23,9 @@ Hệ thống kết hợp khả năng suy luận của LLM với các công cụ 
 
 - **♻️ Single-resident swap**: `LlamaServerSupervisor` quản lý vòng đời tiến trình, swap GGUF coder ↔ instruct giữa các stage.
 
-- **⚡ Logic & Physics Solvers**: Code Z3 / SymPy chạy trong subprocess an toàn (timeout 30s).
+- **⚡ Logic & Physics Solvers**: Code Z3 / SymPy được kiểm tra AST rồi chạy trong subprocess cô lập, giới hạn CPU/bộ nhớ/output và timeout 20s.
 
-- **🔍 Hybrid Retrieval cho Physics**: BM25 + Vector + reranker, truy xuất formulas + examples cho `physics_formalizer`.
+- **🔍 Optional Hybrid Retrieval cho Physics**: BM25 + Vector + reranker khi deployment đã provision một index disclosed; nếu thiếu index, retrieval được skip ngay để bảo toàn request budget.
 
 - **🛡️ Branching success/error**: Khi solver fail, explanation node đọc code lỗi như hint và tự suy luận.
 
@@ -76,7 +76,7 @@ classify (rule-based)
   └─ physics → physics_rag → physics_formalizer (Coder) → physics_solver (SymPy) → physics_explanation (Instruct)
 ```
 
-Mỗi request swap tối đa 1 lần (Coder → Instruct). Solver chạy subprocess, timeout 30s.
+Request được serialize để model swap không xung đột. Solver chạy trong restricted subprocess với timeout 20s; nếu explanation model không còn đủ budget, kết quả solver được trả bằng deterministic fallback.
 Theo Official Q&A, `POST /predict` cũng nhận explicit query type (`task_type`, `query_type`, `type`, `type-1/type-2`); nếu thiếu field này thì classifier fallback bằng `premises-NL`.
 
 ### Q&A compliance highlights
@@ -182,7 +182,7 @@ result = graph.invoke({
 
 ## 📖 Tài liệu
 
-- **`DATA_SOURCES_TEMP.md`** — Chi tiết nguồn dữ liệu
+- **`reports/Data_Disclosure.md`** — Nguồn dữ liệu và trạng thái disclosure dùng cho submission
 - **Mỗi folder** đều có `README.md` riêng
 
 ---

@@ -46,6 +46,8 @@ class OpenAILLMClient(BaseLLM):
             max_tokens=self.max_tokens,
             base_url=self.base_url,
             api_key=self.api_key,
+            max_retries=0,
+            timeout=float(settings.api.request_budget_seconds),
             **kwargs,
         )
         return self._llm

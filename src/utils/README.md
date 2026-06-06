@@ -9,6 +9,7 @@ utils/
 ├── __init__.py
 ├── logger.py            # Setup logging từ config/logging.yaml
 ├── code_extract.py      # Trích xuất Python code từ LLM output
+├── safe_python.py       # Validate + chạy generated code với giới hạn
 └── z3_output_parser.py  # Parse output Z3 solver → True/False/Unknown
 ```
 
@@ -31,3 +32,10 @@ utils/
 - `parse_z3_output(raw_output) → "True" | "False" | "Unknown"`.
 - Xử lý nhiều format output Z3 (Predicted, Expected, multi-conclusion, majority vote).
 - Dùng trong `logic_solver` node.
+
+### safe_python.py
+
+- Validate AST và allowlist import trước khi chạy code do model sinh.
+- Chạy Python isolated, bỏ secrets khỏi environment, giới hạn output và timeout.
+- Trên Linux còn giới hạn CPU, memory, file size và process count.
+- Dừng toàn process group khi request bị cancel.

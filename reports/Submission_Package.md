@@ -11,7 +11,7 @@ The endpoint must expose:
 - `GET /health`
 - `GET /v1/models`
 
-Do not submit a placeholder URL. Replace this field only after the FastAPI service or Cloudflare gateway is publicly reachable and returns the official JSON schema.
+This URL is the submitted public FastAPI service.
 
 Expected `/predict` response contract:
 - Mandatory: `answer`, `explanation`

@@ -24,16 +24,12 @@ import json
 import shutil
 import sys
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from llama_index.core import Document  # noqa: E402
-
-from src.agent.llm.embedding import EmbeddingFactory  # noqa: E402
 from src.core.config import settings  # noqa: E402
-from scripts.distill.schema import KBRecord  # noqa: E402
-from src.retrieval.vector_db import VectorDBManager  # noqa: E402
 from src.utils.logger import logger  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -41,6 +37,40 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # Collection names - physics_rag_node.py phai khop.
 COLLECTION_EXAMPLES = "physics_examples"
 COLLECTION_FORMULAS = "physics_formulas"
+
+
+@dataclass
+class KBRecord:
+    """Minimal, provider-independent schema consumed by the RAG indexer."""
+
+    id: str = ""
+    source: str = ""
+    problem: str = ""
+    topic: str = "other"
+    formulas: list[str] = field(default_factory=list)
+    symbols: dict[str, str] = field(default_factory=dict)
+    sympy_code: str = ""
+    answer: str = ""
+    verified: bool = False
+
+    @classmethod
+    def from_jsonl(cls, line: str) -> "KBRecord":
+        data = json.loads(line)
+        formulas = data.get("formulas") or []
+        if isinstance(formulas, str):
+            formulas = [formulas]
+        symbols = data.get("symbols") or {}
+        return cls(
+            id=str(data.get("id") or ""),
+            source=str(data.get("source") or ""),
+            problem=str(data.get("problem") or data.get("question") or ""),
+            topic=str(data.get("topic") or "other"),
+            formulas=[str(item) for item in formulas],
+            symbols={str(key): str(value) for key, value in dict(symbols).items()},
+            sympy_code=str(data.get("sympy_code") or ""),
+            answer=str(data.get("answer") or ""),
+            verified=data.get("verified") is True,
+        )
 
 
 def _format_example_text(rec: KBRecord) -> str:
@@ -117,8 +147,10 @@ def _load_verified(paths: list[Path]) -> list[KBRecord]:
     return out
 
 
-def _build_examples_collection(records: list[KBRecord], vdb: VectorDBManager) -> None:
+def _build_examples_collection(records: list[KBRecord], vdb) -> None:
     """Build per-record collection (mot doc / record)."""
+    from llama_index.core import Document
+
     docs = [
         Document(
             text=_format_example_text(rec),
@@ -139,11 +171,13 @@ def _build_examples_collection(records: list[KBRecord], vdb: VectorDBManager) ->
     logger.info(f"OK: built '{COLLECTION_EXAMPLES}' voi {len(docs)} examples.")
 
 
-def _build_formulas_collection(records: list[KBRecord], vdb: VectorDBManager) -> None:
+def _build_formulas_collection(records: list[KBRecord], vdb) -> None:
     """Build per-topic collection (mot doc / topic, gop formula).
 
     Dedup formula bang lower-case + strip whitespace.
     """
+    from llama_index.core import Document
+
     by_topic: dict[str, list[KBRecord]] = defaultdict(list)
     for rec in records:
         by_topic[rec.topic or "other"].append(rec)
@@ -201,14 +235,14 @@ def _resolve_inputs(args_inputs: list[str]) -> list[Path]:
 
     candidates = [
         PROJECT_ROOT / settings.distillation.paths.verified_output,
+        PROJECT_ROOT / "data" / "distilled" / "physics_kb.formulas.jsonl",
         PROJECT_ROOT / "data" / "distilled" / "physics_kb.from_pf.jsonl",
     ]
     found = [p for p in candidates if p.exists()]
     if not found:
         raise FileNotFoundError(
-            "Khong tim thay file KB nao. Chay 1 trong:\n"
-            "  - python -m scripts.distill.distill_physics + verify_kb\n"
-            "  - python -m scripts.distill.fetch_physics_formulae --include-constants"
+            "No verified physics KB JSONL was found. Pass one or more "
+            "--input paths containing disclosed, verified records."
         )
     return found
 
@@ -217,7 +251,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build physics RAG index tu distilled KB")
     parser.add_argument("--input", action="append", default=[],
                         help="Input KB jsonl (truyen nhieu lan de merge). "
-                             "Default: auto-detect verified + from_pf trong data/distilled/")
+                             "Default: auto-detect verified JSONL in data/distilled/")
     parser.add_argument("--rebuild", action="store_true",
                         help="Xoa storage/qdrant_storage truoc khi build (idempotent)")
     args = parser.parse_args()
@@ -247,6 +281,9 @@ def main() -> None:
         sys.exit(1)
 
     # Single VectorDBManager instance to avoid Qdrant file lock conflicts
+    from src.agent.llm.embedding import EmbeddingFactory
+    from src.retrieval.vector_db import VectorDBManager
+
     embed = EmbeddingFactory().get_embedding()
     vdb = VectorDBManager(embedding_model=embed)
 

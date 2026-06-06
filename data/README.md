@@ -8,7 +8,7 @@ Thư mục chứa toàn bộ dữ liệu cho project EXACT-2026.
 data/
 ├── EXACT2026_dataset_2026-05-15/   # Dataset gốc BTC (không chỉnh sửa)
 ├── collected/                       # Dữ liệu thu thập từ bên ngoài
-├── distilled/                       # Physics KB cho RAG (output từ scripts/distill/)
+├── distilled/                       # Optional verified Physics KB input for RAG
 ├── external/                        # Cache external resources
 ├── finetune/                        # Datasets ChatML cho fine-tune
 ├── EXACT_Slides.pdf                 # Slide BTC chính thức
@@ -52,20 +52,13 @@ Dữ liệu thu thập từ **bên ngoài** (không phải BTC), phục vụ tra
 
 ## distilled/
 
-Knowledge base cho **physics RAG node**. Output được tạo tự động bằng scripts.
+Optional verified input corpus for the physics RAG node. No runtime corpus or
+persisted index is committed in this repository. Without one, runtime retrieval
+is skipped immediately.
 
-| File | Records | Nguồn gốc | Tạo bởi script |
-|------|---------|------------|-----------------|
-| `physics_kb.formulas.jsonl` | 363 | BTC Physics CSV (1,352 bài) | `scripts/distill/extract_formulas.py` (Gemini 2.5 Flash-Lite API) |
-| `physics_kb.from_pf.jsonl` | 29 | [PhysicsFormulae](https://github.com/BenjaminTMilnes/PhysicsFormulae) | `scripts/distill/fetch_physics_formulae.py` |
-
-**Pipeline tái tạo:**
+**Build after supplying a fully disclosed verified JSONL corpus:**
 ```powershell
-# Extract formulas từ BTC CSV qua Gemini API
-python -m scripts.distill.extract_formulas run --batch-size 50
-
-# Build RAG index (Qdrant)
-python -m scripts.rag.build_physics_index --input data/distilled/physics_kb.formulas.jsonl --rebuild
+python -m scripts.rag.build_physics_index --input data/distilled/physics_kb.verified.jsonl --rebuild
 ```
 
 Xem thêm: `distilled/README.md`
@@ -80,7 +73,7 @@ Cache external resources (download 1 lần, dùng lại).
 |------|------------|
 | `PhysicsFormulae_Compiled.json` | [BenjaminTMilnes/PhysicsFormulae](https://github.com/BenjaminTMilnes/PhysicsFormulae) — file `Compiled.json` (~655KB) |
 
-**Dùng bởi**: `scripts/distill/fetch_physics_formulae.py`
+External resources must be fully disclosed before they are used.
 
 ---
 
@@ -101,5 +94,5 @@ Datasets đã preprocess (ChatML format) cho fine-tune model.
 
 ## Quy tắc commit
 
-- ✅ Commit: `README.md`, `physics_kb.from_pf.jsonl`, changelogs
+- ✅ Commit: `README.md`, changelogs
 - ❌ Ignore: dataset lớn (BTC, finetune), output regen được, logs, models

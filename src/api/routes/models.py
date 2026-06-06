@@ -15,7 +15,6 @@ router = APIRouter(tags=["model"])
 
 _cache_lock = threading.Lock()
 _cached_response: bytes | None = None
-_cached_content_type: str = "application/json"
 
 
 def _configured_models_payload(error: str | None = None) -> dict:
@@ -57,7 +56,7 @@ def _configured_models_payload(error: str | None = None) -> dict:
 @router.get("/v1/models")
 async def models_endpoint() -> Response:
     """Expose OpenAI-compatible model metadata."""
-    global _cached_response, _cached_content_type
+    global _cached_response
 
     models_url = f"{settings.llm.server.base_url.rstrip('/')}/models"
     try:
@@ -65,17 +64,28 @@ async def models_endpoint() -> Response:
             response = await client.get(models_url)
 
 
-        if response.status_code == 200:
-            with _cache_lock:
-                _cached_response = response.content
-                _cached_content_type = response.headers.get(
-                    "content-type", "application/json"
-                )
+        if response.status_code != 200:
+            return JSONResponse(
+                status_code=503,
+                content=_configured_models_payload(
+                    f"llama-server returned HTTP {response.status_code}"
+                ),
+            )
 
-        return Response(
-            content=response.content,
-            status_code=response.status_code,
-            media_type=response.headers.get("content-type", "application/json"),
+        payload = _configured_models_payload()
+        payload["exact_runtime"]["reachable"] = True
+        try:
+            payload["exact_runtime"]["upstream"] = response.json()
+        except ValueError:
+            payload["exact_runtime"]["upstream"] = {"raw": response.text[:1000]}
+
+        encoded = json.dumps(payload).encode("utf-8")
+        with _cache_lock:
+            _cached_response = encoded
+
+        return JSONResponse(
+            status_code=200,
+            content=payload,
         )
 
     except httpx.HTTPError as exc:
@@ -96,6 +106,6 @@ async def models_endpoint() -> Response:
 
         # No cache yet: expose configured model metadata
         return JSONResponse(
-            status_code=200,
+            status_code=503,
             content=_configured_models_payload(f"llama-server is not reachable: {exc}"),
         )

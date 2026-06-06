@@ -3,7 +3,9 @@ const JSON_HEADERS = {
   "cache-control": "no-store",
 };
 
-const REQUEST_TIMEOUT_MS = 58_000;
+// The origin stops work at 58s. Keep a small transport margin while remaining
+// below the competition's 60-second hard cap.
+const REQUEST_TIMEOUT_MS = 59_000;
 
 function json(data, init = {}) {
   return new Response(JSON.stringify(data), {
@@ -117,8 +119,10 @@ async function handleHealth(env) {
   try {
     const response = await fetchWithTimeout(`${origin}/health`, { method: "GET" }, 5_000);
     const body = await response.json().catch(() => ({}));
+    const originReady = body.ready === true
+      || (body.ready === undefined && body.status === "ok" && body.supervisor_running === true);
     return json({
-      status: response.ok ? "ok" : "degraded",
+      status: response.ok && originReady ? "ok" : "degraded",
       gateway: "ok",
       origin_configured: true,
       origin_status: response.status,

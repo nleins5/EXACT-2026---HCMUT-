@@ -12,6 +12,7 @@ from src.agent.nodes.physics_formalizer import physics_formalizer_node
 from src.agent.nodes.physics_solver import physics_solver_node
 from src.agent.nodes.physics_explanation import physics_explanation_node
 from src.core.config import settings
+from src.agent.runtime import cancellation_context, cancellation_guard
 from src.utils.logger import logger
 
 _MAX_RETRIES = settings.solver.max_retries
@@ -74,18 +75,18 @@ def build_graph() -> StateGraph:
     workflow = StateGraph(AgentState)
 
 
-    workflow.add_node("classify",             classify_node)
+    workflow.add_node("classify",             cancellation_guard(classify_node))
 
-    workflow.add_node("logic_formalizer",     logic_formalizer_node)
-    workflow.add_node("logic_solver",         logic_solver_node)
-    workflow.add_node("logic_explanation",    logic_explanation_node)
-    workflow.add_node("logic_formalizer_retry", _logic_retry_node)
+    workflow.add_node("logic_formalizer",     cancellation_guard(logic_formalizer_node))
+    workflow.add_node("logic_solver",         cancellation_guard(logic_solver_node))
+    workflow.add_node("logic_explanation",    cancellation_guard(logic_explanation_node))
+    workflow.add_node("logic_formalizer_retry", cancellation_guard(_logic_retry_node))
 
-    workflow.add_node("physics_rag",          physics_rag_node)
-    workflow.add_node("physics_formalizer",   physics_formalizer_node)
-    workflow.add_node("physics_solver",       physics_solver_node)
-    workflow.add_node("physics_explanation",  physics_explanation_node)
-    workflow.add_node("physics_formalizer_retry", _physics_retry_node)
+    workflow.add_node("physics_rag",          cancellation_guard(physics_rag_node))
+    workflow.add_node("physics_formalizer",   cancellation_guard(physics_formalizer_node))
+    workflow.add_node("physics_solver",       cancellation_guard(physics_solver_node))
+    workflow.add_node("physics_explanation",  cancellation_guard(physics_explanation_node))
+    workflow.add_node("physics_formalizer_retry", cancellation_guard(_physics_retry_node))
 
 
     workflow.set_entry_point("classify")
@@ -147,6 +148,8 @@ def run_pipeline(
     premises: list[str] = None,
     collection_name: str = "logic_regulations",
     task_type: Literal["logic", "physics"] | None = None,
+    cancel_event=None,
+    deadline: float | None = None,
 ) -> dict:
     """
     Main entry point for the pipeline.
@@ -160,8 +163,6 @@ def run_pipeline(
     Returns:
         Dict with answer, explanation, and execution artifacts.
     """
-    graph = get_graph()
-
     initial_state: AgentState = {
         "question": question,
         "premises": premises or [],
@@ -193,7 +194,11 @@ def run_pipeline(
     }
 
     logger.info(f"Processing: {question[:100]}...")
-    result = graph.invoke(initial_state)
+    from src.agent.llm.factory import LLMFactory
+
+    with LLMFactory.pipeline_session(cancel_event), cancellation_context(cancel_event, deadline):
+        graph = get_graph()
+        result = graph.invoke(initial_state)
 
     final = result.get("final_answer", {})
     intermediate = result.get("intermediate_answer", {})

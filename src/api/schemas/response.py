@@ -18,8 +18,11 @@ class PredictResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
+    ready: bool
+    busy: bool
     supervisor_running: bool
     active_role: str | None = None
+    startup_error: str | None = None
     uptime: float
 
 
@@ -32,4 +35,3 @@ def fallback_response() -> PredictResponse:
         premises=[],
         confidence=0.0,
     )
-

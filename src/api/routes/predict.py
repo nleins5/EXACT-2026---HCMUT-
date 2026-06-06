@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 import time
 from typing import Any
 
 from fastapi import APIRouter, Request
 
 from src.agent.graph import run_pipeline
+from src.agent.llm.factory import LLMFactory
 from src.api.schemas.request import PredictRequest
 from src.api.schemas.response import PredictResponse, fallback_response
 from src.core.config import settings
 from src.utils.logger import logger
 
 router = APIRouter(tags=["prediction"])
+_predict_gate = asyncio.Lock()
 
 
 def _request_timeout() -> float:
@@ -90,6 +93,9 @@ async def predict_endpoint(
 ) -> PredictResponse:
     started_at = time.monotonic()
     timeout = _request_timeout()
+    cancellation_grace = max(0.5, float(settings.api.cancellation_grace_seconds))
+    work_deadline = started_at + max(1.0, timeout - cancellation_grace)
+    hard_deadline = started_at + timeout
     question_preview = payload.question[:120].replace("\n", " ")
 
     logger.info(
@@ -100,15 +106,31 @@ async def predict_endpoint(
         question_preview,
     )
 
+    gate_acquired = False
+    release_gate = True
+    task: asyncio.Task | None = None
+    cancel_event = threading.Event()
+
     try:
-        result = await asyncio.wait_for(
+        await asyncio.wait_for(
+            _predict_gate.acquire(),
+            timeout=max(0.1, work_deadline - time.monotonic()),
+        )
+        gate_acquired = True
+
+        task = asyncio.create_task(
             asyncio.to_thread(
                 run_pipeline,
                 payload.question,
                 payload.premises_nl,
                 task_type=payload.task_type,
-            ),
-            timeout=timeout,
+                cancel_event=cancel_event,
+                deadline=work_deadline,
+            )
+        )
+        result = await asyncio.wait_for(
+            asyncio.shield(task),
+            timeout=max(0.1, work_deadline - time.monotonic()),
         )
         response = _sanitize_response(result)
         logger.info(
@@ -119,8 +141,44 @@ async def predict_endpoint(
         )
         return response
     except asyncio.TimeoutError:
-        logger.warning("POST /predict timed out after %.3fs", timeout)
+        logger.warning("POST /predict exhausted its %.3fs request budget.", timeout)
+        cancel_event.set()
+
+        if task is not None:
+            logger.warning("Aborting the active pipeline and model process.")
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(LLMFactory.abort_active_request),
+                    timeout=max(0.1, hard_deadline - time.monotonic()),
+                )
+            except asyncio.TimeoutError:
+                logger.error("Timed out while aborting the active model process.")
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(task),
+                    timeout=max(0.1, hard_deadline - time.monotonic()),
+                )
+            except Exception:
+                pass
+
+            if not task.done():
+                release_gate = False
+
+                def release_after_pipeline(done_task: asyncio.Task) -> None:
+                    try:
+                        done_task.exception()
+                    except BaseException:
+                        pass
+                    if _predict_gate.locked():
+                        _predict_gate.release()
+
+                task.add_done_callback(release_after_pipeline)
+
         return fallback_response()
     except Exception as exc:
         logger.exception("POST /predict failed: %s", exc)
         return fallback_response()
+    finally:
+        if gate_acquired and release_gate and _predict_gate.locked():
+            _predict_gate.release()

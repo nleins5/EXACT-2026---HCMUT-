@@ -4,6 +4,7 @@ import time
 
 from fastapi import APIRouter, Request
 
+from src.agent.llm.factory import LLMFactory
 from src.api.schemas.response import HealthResponse
 
 router = APIRouter(tags=["health"])
@@ -13,11 +14,14 @@ router = APIRouter(tags=["health"])
 async def health_endpoint(request: Request) -> HealthResponse:
     started_at = getattr(request.app.state, "started_at", time.monotonic())
     supervisor = getattr(request.app.state, "supervisor", None)
+    ready = LLMFactory.is_ready()
 
     return HealthResponse(
-        status="ok",
+        status="ok" if ready else "degraded",
+        ready=ready,
+        busy=LLMFactory.is_busy(),
         supervisor_running=bool(supervisor and supervisor.is_alive()),
         active_role=getattr(supervisor, "active_role", None),
+        startup_error=getattr(request.app.state, "startup_error", None),
         uptime=round(time.monotonic() - started_at, 3),
     )
-

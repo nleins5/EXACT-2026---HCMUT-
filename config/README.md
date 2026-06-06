@@ -22,7 +22,8 @@ Cấu hình chính, được load bởi `src/core/config.py` → singleton `sett
 | `llm.server` | Binary path, host, port, ctx_size, gpu_layers |
 | `llm.coder` | Model path + params cho Coder (sinh code) |
 | `llm.instruct` | Model path + params cho Instruct (sinh explanation) |
-| `api` | Request budget timeout |
+| `api` | Request budget, cancellation grace, explanation fallback threshold, warmup role |
+| `solver` | Timeout, retry count, generated-code memory ceiling |
 | `rag` | Reranker model (BAAI/bge-reranker-base) |
 | `embedding` | Embedding model (BAAI/bge-m3) |
 | `retrieval` | Threshold, top_k |

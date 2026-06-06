@@ -85,77 +85,31 @@ Dùng để check trạng thái server trước Public Test Day. (Nên code tron
 ```json
 {
   "status": "ok",
+  "ready": true,
+  "busy": false,
   "supervisor_running": true,
+  "active_role": "coder",
+  "startup_error": null,
   "uptime": 3600
 }
 ```
+
+`status` chỉ là `ok` khi model server thực sự đang chạy và sẵn sàng nhận request.
 
 ---
 
 ## 4. Hướng Dẫn Tích Hợp LangGraph Pipeline
 
-Code API **không cần** biết cách gọi `llama-server` hay setup LangChain. Chỉ cần mapping Request vào StateGraph.
+`src/api/app.py` khởi tạo một `LlamaServerSupervisor`, warm model `coder`, rồi
+chỉ báo `health.status=ok` khi model process thực sự sẵn sàng.
 
-**Ví dụ cấu trúc `src/api/app.py`:**
+`src/api/routes/predict.py` dùng một request gate để serialize toàn pipeline.
+Mỗi request có deadline và `threading.Event` cancellation. Khi hết budget, route
+kill active model process, dừng solver child process, giữ gate cho tới khi
+background pipeline thoát, rồi trả response fallback hợp lệ.
 
-```python
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
-from src.agent.llm.factory import LLMFactory
-from src.agent.llm.server_supervisor import LlamaServerSupervisor
-from src.api.routes import predict, health
-
-supervisor = LlamaServerSupervisor()
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    LLMFactory.init(supervisor)
-    # Warmup instruct model (Tùy chọn)
-    supervisor.swap_to("instruct")
-    yield
-    # Shutdown
-    supervisor.shutdown()
-
-app = FastAPI(lifespan=lifespan)
-app.include_router(predict.router)
-app.include_router(health.router)
-```
-
-**Ví dụ gọi Graph trong Route (`src/api/routes/predict.py`):**
-
-```python
-import asyncio
-from fastapi import APIRouter
-from src.api.schemas.request import RequestSchema
-from src.api.schemas.response import ResponseSchema
-from src.agent.graph import get_graph
-
-router = APIRouter()
-graph = get_graph()
-
-@router.post("/predict", response_model=ResponseSchema)
-async def predict_endpoint(request: RequestSchema):
-    try:
-        # Giới hạn 55s để an toàn (BTC cap 60s)
-        result = await asyncio.wait_for(
-            asyncio.to_thread(
-                graph.invoke,
-                {
-                    "question": request.question,
-                    "premises": request.dict().get("premises-NL", [])
-                }
-            ),
-            timeout=55.0
-        )
-        final = result.get("final_answer", {})
-        return ResponseSchema(**final)
-
-    except asyncio.TimeoutError:
-        return fallback_response()
-    except Exception as e:
-        return fallback_response(error=str(e))
-```
+`src/agent/graph.py` cũng giữ pipeline-level lock để các lời gọi trực tiếp ngoài
+HTTP không thể swap model đồng thời.
 
 ---
 
@@ -180,7 +134,7 @@ async def predict_endpoint(request: RequestSchema):
 
 ## 6. Deployment Checklist (Dành Cho API Dev)
 
-- [ ] API phải handle được tải (mặc dù chỉ 1 worker nhưng có thể dùng async).
+- [ ] Chạy đúng 1 Uvicorn worker; request được queue/serialize vì chỉ một model được resident.
 - [ ] Tham số `host` và `port` linh hoạt thông qua biến môi trường hoặc CLI (để deploy lên ngrok/local/cloud tùy ý đồ test).
 - [ ] Chắc chắn file `config/setting.yaml` đã cài đặt đường dẫn GGUF đúng trước khi khởi động FastAPI.
 - [ ] In logs chi tiết (Question ID nếu có, thời gian response) bằng `src.utils.logger` để dễ debug lúc thi live.

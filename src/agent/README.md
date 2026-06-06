@@ -9,6 +9,7 @@ src/agent/
 ├── README.md               # File này
 ├── __init__.py             # Export: run_pipeline, get_graph, build_graph
 ├── graph.py                # Định nghĩa LangGraph workflow
+├── runtime.py              # Request cancellation + deadline context
 ├── state.py                # AgentState TypedDict
 ├── schema.py               # ExactResponse Pydantic model
 │
@@ -29,6 +30,7 @@ src/agent/
 │   ├── physics_rag.py      # Truy xuất công thức vật lý
 │   ├── physics_formalizer.py # Dịch vật lý → mã SymPy
 │   ├── physics_solver.py   # Thực thi SymPy, set code_error flag
+│   ├── fallbacks.py        # Deterministic final answer từ solver evidence
 │   └── physics_explanation.py # Tổng hợp kết quả (2 prompt: success/error)
 │
 └── prompts/                # Prompts cho từng node
@@ -120,11 +122,11 @@ class ExactResponse(BaseModel):
 |------|----------|
 | `classifier.py` | Rule-based classification (explicit task_type first, fallback: có premises → logic) |
 | `logic_formalizer.py` | LLM Coder → Z3 code |
-| `logic_solver.py` | Subprocess Z3 (timeout 30s) |
+| `logic_solver.py` | Restricted subprocess Z3 (timeout 20s) |
 | `logic_explanation.py` | LLM Instruct → JSON ExactResponse (2 prompts) |
-| `physics_rag.py` | Hybrid retrieval (BM25 + vector) |
+| `physics_rag.py` | Optional hybrid retrieval; skip ngay nếu index vắng |
 | `physics_formalizer.py` | LLM Coder → SymPy code |
-| `physics_solver.py` | Subprocess SymPy (timeout 30s) |
+| `physics_solver.py` | Restricted subprocess SymPy (timeout 20s) |
 | `physics_explanation.py` | LLM Instruct → JSON ExactResponse (2 prompts) |
 
 ### prompts/
@@ -151,7 +153,7 @@ Client POST /predict
   → PredictResponse
 ```
 
-**Timing**: 2 LLM calls + 1 swap = ~10-15s (fit trong budget 60s)
+**Reliability**: pipeline được serialize để tránh race khi swap model; request có deadline/cancellation, và solver fallback giữ đáp án đã verify nếu explanation model không kịp.
 
 ## Yêu cầu
 

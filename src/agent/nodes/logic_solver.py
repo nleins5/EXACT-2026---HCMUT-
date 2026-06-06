@@ -1,8 +1,9 @@
-"""Logic Solver Node — execute Z3 code in a sandboxed subprocess."""
+"""Logic Solver Node — execute validated Z3 code in a restricted subprocess."""
 import subprocess
-import sys
 from src.agent.state import AgentState
+from src.agent.runtime import current_cancel_event
 from src.core.config import settings
+from src.utils.safe_python import UnsafeCodeError, run_solver_code
 from src.utils.logger import logger
 from src.utils.z3_output_parser import parse_z3_output
 
@@ -20,9 +21,12 @@ def logic_solver_node(state: AgentState) -> dict:
         return {"intermediate_answer": intermediate}
 
     try:
-        result = subprocess.run(
-            [sys.executable, "-c", code],
-            capture_output=True, text=True, timeout=_SOLVER_TIMEOUT,
+        result = run_solver_code(
+            code,
+            allowed_imports={"z3"},
+            timeout_s=_SOLVER_TIMEOUT,
+            memory_mb=settings.solver.memory_mb,
+            cancel_event=current_cancel_event(),
         )
         if result.returncode == 0:
             raw_output = result.stdout.strip()
@@ -39,6 +43,11 @@ def logic_solver_node(state: AgentState) -> dict:
             intermediate["error_message"] = result.stderr.strip() or "Unknown runtime error"
             logger.warning(f"Z3 Solver lỗi: {intermediate['error_message'][:200]}")
 
+    except UnsafeCodeError as e:
+        intermediate["code_output"] = ""
+        intermediate["code_error"] = True
+        intermediate["error_message"] = f"Unsafe generated code rejected: {e}"
+        logger.warning("Z3 Solver rejected unsafe code: %s", e)
     except subprocess.TimeoutExpired:
         intermediate["code_output"] = ""
         intermediate["code_error"] = True

@@ -30,11 +30,15 @@ llm:
 
 api:
   request_budget_seconds: 58    # Q&A Q13: hard cap 60s/request; keep 2s margin.
+  cancellation_grace_seconds: 3
+  min_explanation_seconds: 20   # Preserve solver answer instead of timing out during model swap.
+  warmup_role: coder             # Avoid spending the first request loading the coder model.
 
 # Solver subprocess settings (Q13 timing + Slide 27 iterative refinement)
 solver:
   timeout_s: 20                   # Q13: was 30s, reduced to 20s for safety margin
   max_retries: 1                  # Slide 27: if solver fails, retry formalizer once
+  memory_mb: 1536                 # Per generated-code subprocess memory ceiling.
 
 rag:
   reranker: BAAI/bge-reranker-base

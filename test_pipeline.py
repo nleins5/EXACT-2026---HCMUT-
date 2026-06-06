@@ -3,6 +3,9 @@
 import sys
 from pathlib import Path
 
+# This is a manual GPU/model smoke test, not part of the fast pytest suite.
+__test__ = False
+
 # Add project root to path
 sys.path.append(str(Path(__file__).parent))
 

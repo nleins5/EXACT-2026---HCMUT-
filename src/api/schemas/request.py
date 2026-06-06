@@ -1,10 +1,25 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 TaskType = Literal["logic", "physics"]
+QuestionText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=20_000),
+]
+PremiseText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=4_000),
+]
 
 
 class PredictRequest(BaseModel):
@@ -12,8 +27,12 @@ class PredictRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    question: str = Field(..., min_length=1)
-    premises_nl: list[str] = Field(default_factory=list, alias="premises-NL")
+    question: QuestionText
+    premises_nl: list[PremiseText] = Field(
+        default_factory=list,
+        alias="premises-NL",
+        max_length=200,
+    )
     task_type: TaskType | None = Field(
         default=None,
         description="Optional explicit query type from the evaluator: logic/type1 or physics/type2.",
@@ -41,9 +60,13 @@ class PredictRequest(BaseModel):
         if value is None:
             return []
         if isinstance(value, str):
-            return [value]
+            return [value] if value.strip() else []
         if isinstance(value, list):
-            return [str(item) for item in value if item is not None]
+            return [
+                str(item)
+                for item in value
+                if item is not None and str(item).strip()
+            ]
         return []
 
 
