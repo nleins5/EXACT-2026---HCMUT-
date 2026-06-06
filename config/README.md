@@ -33,7 +33,7 @@ Cấu hình chính, được load bởi `src/core/config.py` → singleton `sett
 ### Override bằng env var
 
 - `LANGSMITH_API_KEY`: enable LangSmith tracing.
-- `GOOGLE_API_KEY`: cho distillation pipeline (Gemini).
+- Closed-source LLM API keys (GPT/Claude/Gemini/etc.) are prohibited and must not be configured.
 
 ## logging.yaml
 

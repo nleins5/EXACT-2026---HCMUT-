@@ -52,7 +52,7 @@ Thư mục `src/agent/` chứa:
 
 **Các hàm chính**:
 - `build_graph()` — Xây dựng LangGraph với 8 nodes
-- `run_pipeline(question, premises, collection_name)` — Chạy pipeline
+- `run_pipeline(question, premises, collection_name, task_type=...)` — Chạy pipeline
 - `get_graph()` — Trả về graph đã build
 
 **Pipeline**:
@@ -118,7 +118,7 @@ class ExactResponse(BaseModel):
 
 | File | Mục đích |
 |------|----------|
-| `classifier.py` | Rule-based classification (có premises → logic) |
+| `classifier.py` | Rule-based classification (explicit task_type first, fallback: có premises → logic) |
 | `logic_formalizer.py` | LLM Coder → Z3 code |
 | `logic_solver.py` | Subprocess Z3 (timeout 30s) |
 | `logic_explanation.py` | LLM Instruct → JSON ExactResponse (2 prompts) |
@@ -145,7 +145,7 @@ class ExactResponse(BaseModel):
 ```
 Client POST /predict
   → run_pipeline()
-    → classify (rule-based)
+    → classify (explicit task_type/query_type, else rule-based)
       → logic_formalizer (Coder) → logic_solver (Z3) → logic_explanation (Instruct)
       → physics_rag → physics_formalizer (Coder) → physics_solver (SymPy) → physics_explanation (Instruct)
   → PredictResponse

@@ -27,7 +27,7 @@ core/
 | `retrieval` | `RetrievalConfig` | Threshold, top_k |
 | `storage` | `StorageConfig` | Đường dẫn vector DB |
 | `langsmith` | `LangsmithConfig` | Tracing config |
-| `distillation` | `DistillationConfig` | Offline pipeline (teacher LLM) |
+| `distillation` | `DistillationConfig` | Offline extraction config; closed-source LLM providers disabled |
 
 ## Cách dùng
 

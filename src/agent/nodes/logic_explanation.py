@@ -40,6 +40,7 @@ def logic_explanation_node(state: AgentState) -> dict:
         else:
             prompt = LOGIC_OUTPUT_PROMPT.format(
                 question=state["question"],
+                generated_code=intermediate.get("generated_code", ""),
                 code_output=intermediate.get("code_output", ""),
             )
             logger.info("Logic explanation: dung SUCCESS prompt.")

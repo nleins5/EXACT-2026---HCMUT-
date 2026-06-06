@@ -22,10 +22,18 @@ def logic_formalizer_node(state: AgentState) -> dict:
         else:
             premises_block = ""
 
+        intermediate = state.get("intermediate_answer", {})
         user_prompt = Z3_USER_TEMPLATE.format(
             premises_block=premises_block,
             question=state["question"],
         )
+        retry_feedback = (intermediate.get("retry_error_feedback") or "").strip()
+        if retry_feedback:
+            user_prompt += (
+                "\n\nPrevious Z3 code failed with this runtime/syntax error:\n"
+                f"{retry_feedback}\n"
+                "Regenerate corrected code. Keep the same output format."
+            )
 
         from langchain_core.messages import SystemMessage, HumanMessage
         response = llm.invoke([
@@ -39,7 +47,6 @@ def logic_formalizer_node(state: AgentState) -> dict:
         else:
             logger.warning("Logic formalizer: khong trich xuat duoc code Python.")
 
-        intermediate = state.get("intermediate_answer", {})
         intermediate["generated_code"] = code
         return {"intermediate_answer": intermediate}
 

@@ -1,50 +1,19 @@
-# EXACT 2026: Data Disclosure Document
-**Team:** [Điền tên nhóm của bạn vào đây]
+# EXACT 2026 Data Disclosure Statement
+**Team:** AI WITH BRO | **Scope:** Training data, retrieval corpora, preprocessing inputs, and evaluation assets
 
-In compliance with the EXACT 2026 guidelines, this document discloses all external datasets, synthetic data generation processes, and knowledge bases used for training, fine-tuning, and retrieval within our system.
+This statement discloses all external data sources used by the EXACT-2026 pipeline. The system does not use GPT, Claude, Gemini, commercial LLM APIs, or any closed-source model for training, data generation, preprocessing, retrieval, evaluation, or inference. "OpenAI-compatible" in the codebase refers only to the local HTTP serving protocol used by `llama-server`.
 
----
+## Source Register
+| Source | Role in pipeline | Scope used | Processing and controls | Disclosure status |
+|---|---|---:|---|---|
+| Official EXACT 2026 Dataset | Primary task data for Type 1 logic and Type 2 physics; validation of API schema and answer format. | Logic: 411 records / 808 questions. Physics: organizer-provided text-only CSV. | Parsed deterministically from JSON/CSV. Physics rows whose IDs start with `QA` are filtered out according to the official Q&A ruling. | Fully disclosed as organizer-provided data. |
+| FOLIO Dataset | Improves natural-language-to-first-order-logic mapping and Z3 entailment patterns for Type 1 logic. | Approx. 1,082 records after availability and preprocessing filters. | Premises and conclusions are converted into formal logic examples using deterministic Python scripts and open-source symbolic tooling. | Public source: https://huggingface.co/datasets/yale-nlp/FOLIO |
+| PhysicsFormulae Repository | Static formula and constants reference for Type 2 physics retrieval. | Approx. 28 verified formula/constant records. | Extracted, normalized, verified, and converted into RAG JSONL records. | Public source: https://github.com/BenjaminTMilnes/PhysicsFormulae |
+| Electro Textbook Dataset | Supplementary physics examples for SymPy code-generation and explanation training. | 242 physics problems with solutions and verified SymPy code. | Internally digitized and normalized into supervised examples. Must be excluded unless a complete bibliography is attached. | Conditional disclosure required before final submission. |
+| RAG Knowledge Base | Runtime retrieval for physics formalization. | Collections: `physics_formulas`, `physics_examples`. | Built from official physics data, PhysicsFormulae, and optionally Electro only if fully disclosed. Uses embeddings/reranking; no closed-source LLM rewriting. | Derived corpus; sources listed above. |
 
-## 1. Training & Fine-Tuning Datasets
+## Closed-Source LLM Attestation
+No closed-source or commercial LLM is used at any point in the pipeline. This includes: generating synthetic training data, rewriting datasets, preprocessing examples, building RAG content, running evaluation, or serving predictions. Runtime inference is performed only with self-hosted open-source 7B-class models through `llama.cpp` / `llama-server`.
 
-To train our specialized `Qwen2.5-Coder` and `Qwen2.5-Instruct` models, we combined the official EXACT dataset with the following external sources:
-
-### 1.1. FOLIO Dataset
-- **Source URL:** [yale-nlp/FOLIO on HuggingFace](https://huggingface.co/datasets/yale-nlp/FOLIO)
-- **Size:** ~1,082 records used.
-- **Purpose:** Used to improve the model's ability to translate natural language premises into First-Order Logic (FOL) and Z3 syntax. This significantly enhanced performance on Type 1 (Logic) questions.
-
-### 1.2. Custom Electro Textbook Dataset (Internal)
-- **Source:** Internally collected and digitized from high school / university electromagnetism textbooks.
-- **Size:** 242 physics problems with step-by-step solutions and verified SymPy code.
-- **Purpose:** Used as supplementary training data to improve the model's arithmetic reliability, unit conversion accuracy, and SymPy code generation for Type 2 (Physics) problems.
-
-### 1.3. EXACT 2026 Official Dataset
-- **Source:** Provided by Organizers.
-- **Preprocessing:** We filtered out 401 annotation errors in the Physics dataset (IDs starting with "QA-") as instructed in the Q&A document. The remaining valid samples were converted into SymPy / Z3 training templates.
-
----
-
-## 2. Knowledge Base for Retrieval (RAG)
-
-Our system uses a Retrieval-Augmented Generation (RAG) module for Type 2 Physics queries. The vector database (Qdrant) is populated with the following data:
-
-### 2.1. PhysicsFormulae
-- **Source URL:** [BenjaminTMilnes/PhysicsFormulae on GitHub](https://github.com/BenjaminTMilnes/PhysicsFormulae)
-- **Size:** ~28 verified formulas and constants (after parsing).
-- **Purpose:** Acts as a highly accurate, static formula sheet. The RAG module retrieves the most relevant formulas to provide as context to the Coder LLM, ensuring the generated SymPy code uses correct equations.
-
-### 2.2. EXACT 2026 Distilled Solutions
-- **Source:** Official EXACT 2026 Physics dataset.
-- **Purpose:** Used as "Worked Examples" in the RAG context. The system retrieves semantically similar physics problems and their corresponding code implementations to serve as few-shot demonstrations at inference time.
-
----
-
-## 3. Synthetic Data Generation
-
-We utilized closed-source LLMs **strictly for offline data distillation and preprocessing**, in full compliance with the competition rules (no closed-source models are used at inference time).
-
-### 3.1. Gemini API (Flash Lite)
-- **Model Used:** `gemini-2.5-flash-lite` (via API).
-- **Volume:** Processed ~1,594 records from the official BTC Physics dataset and our internal Electro dataset.
-- **Purpose:** Used offline to distill raw Chain-of-Thought solutions into structured SymPy code templates and to extract standardized physics formulas for our RAG Knowledge Base.
+## Submission Risk Note
+The Electro textbook dataset is the only conditional source. If the team cannot provide title, author or publisher, edition/year, URL or acquisition source, and page/section range for every included item, Electro-derived artifacts should be removed from fine-tuning, retrieval indexes, and the final live API package.

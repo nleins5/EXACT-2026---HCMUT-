@@ -14,6 +14,15 @@ from src.utils.logger import logger
 class Retriever:
     """Hybrid search engine (vector + BM25) co reranker."""
 
+    _instance: "Retriever | None" = None
+
+    @classmethod
+    def get_instance(cls) -> "Retriever":
+        """Singleton getter — tránh reload model mỗi request (15-30s cold start)."""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
     def __init__(self):
         embed_factory = EmbeddingFactory()
         self.embedding_model = embed_factory.get_embedding()

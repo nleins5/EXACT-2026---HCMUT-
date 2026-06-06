@@ -23,13 +23,10 @@ class HealthResponse(BaseModel):
     uptime: float
 
 
-def fallback_response(error: str | None = None) -> PredictResponse:
-    explanation = "The system could not complete reasoning within the request budget."
-    if error:
-        explanation = f"{explanation} Internal detail: {error}"
+def fallback_response() -> PredictResponse:
     return PredictResponse(
         answer="Unknown",
-        explanation=explanation,
+        explanation="The system could not determine a definitive answer for this query.",
         fol="",
         cot=[],
         premises=[],

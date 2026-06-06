@@ -1,33 +1,27 @@
-"""
-Physics Solver Node — Thực thi mã SymPy trong subprocess an toàn.
-
-Sau khi thực thi:
-- Nếu thành công  → set code_error=False, lưu stdout vào code_output.
-- Nếu thất bại    → set code_error=True,  lưu thông báo lỗi vào error_message.
-
-Solver KHÔNG raise — luôn để pipeline đi tiếp đến explanation node.
-"""
+"""Physics Solver Node — execute SymPy code in a sandboxed subprocess."""
 import subprocess
 import sys
 from src.agent.state import AgentState
+from src.core.config import settings
 from src.utils.logger import logger
+
+_SOLVER_TIMEOUT = settings.solver.timeout_s
 
 
 def physics_solver_node(state: AgentState) -> dict:
-    """Thực thi mã SymPy đã sinh ra, ghi nhận kết quả/lỗi vào intermediate_answer."""
     intermediate = state.get("intermediate_answer", {})
     code = intermediate.get("generated_code", "")
 
     if not code:
         intermediate["code_output"] = ""
         intermediate["code_error"] = True
-        intermediate["error_message"] = "Không có mã code để thực thi (formalizer trả về rỗng)."
+        intermediate["error_message"] = "No code to execute (formalizer returned empty)."
         return {"intermediate_answer": intermediate}
 
     try:
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=_SOLVER_TIMEOUT,
         )
         if result.returncode == 0:
             intermediate["code_output"] = result.stdout.strip()
@@ -43,12 +37,12 @@ def physics_solver_node(state: AgentState) -> dict:
     except subprocess.TimeoutExpired:
         intermediate["code_output"] = ""
         intermediate["code_error"] = True
-        intermediate["error_message"] = "Quá thời gian thực thi (30s)."
-        logger.warning("SymPy Solver: timeout 30s")
+        intermediate["error_message"] = f"Execution timed out ({_SOLVER_TIMEOUT}s)."
+        logger.warning(f"SymPy Solver: timeout {_SOLVER_TIMEOUT}s")
     except Exception as e:
         intermediate["code_output"] = ""
         intermediate["code_error"] = True
-        intermediate["error_message"] = f"Lỗi khi gọi subprocess: {e}"
+        intermediate["error_message"] = f"Subprocess error: {e}"
         logger.error(f"SymPy Solver exception: {e}")
 
     return {"intermediate_answer": intermediate}

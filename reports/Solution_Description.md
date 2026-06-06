@@ -1,29 +1,27 @@
-# EXACT 2026: Solution Description
-**Team:** [Điền tên nhóm của bạn vào đây]
+# EXACT 2026 Technical Solution Brief
+**Team:** AI WITH BRO | **System:** Open-source symbolic reasoning API for logic and physics QA
 
-## 1. Approach Overview
-Our solution is an **Agentic AI system** built on **LangGraph**, designed to explicitly decouple logical reasoning/mathematical computation from natural language explanation. Instead of relying on a single LLM to perform both reasoning and text generation, we employ a dual-specialist LLM architecture augmented with formal symbolic solvers.
+> The core design choice is to treat each query as a constrained reasoning problem, not as free-form chat generation. The LLM proposes formal executable structure; Z3 or SymPy performs the decisive computation; the final explanation is grounded in the executed trace.
 
-The pipeline processes queries through a unified stream, classifying them into Type 1 (Logic) or Type 2 (Physics) based on the presence of natural-language premises. 
+## Architecture Positioning
+The submitted service exposes one FastAPI endpoint, `/predict`, for the unified EXACT 2026 test stream. The classifier first honors any explicit `task_type` or `query_type` field. If no explicit type is provided, it uses the official schema signal: non-empty `premises-NL` routes to Type 1 logic, while empty premises route to Type 2 physics. This keeps routing deterministic and avoids spending model budget on a task that can be inferred from the input contract.
 
-## 2. System Architecture
-Our pipeline consists of the following sequential stages:
-1. **Classifier (Rule-based):** Routes the query based on input schema (Logic vs. Physics).
-2. **Retrieval-Augmented Generation (Physics only):** Uses a Hybrid Search (BM25 + Vector) with a reranker to retrieve relevant physics formulas and worked examples from a curated knowledge base.
-3. **Formalizer:** A specialized Coder LLM translates the natural language query (and retrieved context) into executable code (Z3 for Logic, SymPy for Physics).
-4. **Symbolic Solver:** The generated code is executed in an isolated Python subprocess with a strict 30-second timeout. This ensures the reasoning is mathematically precise and provably correct.
-5. **Explanation Generator:** A specialized Instruct LLM takes the original problem, the generated code, and the execution output to synthesize a structured JSON response containing the final answer, chain-of-thought, and formal logic derivation.
+## Reasoning Pipeline
+| Stage | Engineering role | Reliability control |
+|---|---|---|
+| Classifier | Selects logic or physics path without an LLM call. | Deterministic schema-based routing. |
+| Retrieval | For physics, retrieves formulas and worked examples from disclosed corpora. | Hybrid BM25/vector search with reranking. |
+| Formalizer | Generates Z3 code for logic or SymPy code for physics. | Self-hosted open-source coder model; no external LLM API. |
+| Solver | Executes the generated program and returns the symbolic/numeric result. | Subprocess isolation, timeout budget, and one execution-feedback retry. |
+| Explainer | Converts the solver result into the official response schema. | Explanation is conditioned on code, premises, retrieved evidence, and solver output. |
 
-*Error-Branching Mechanism:* If the symbolic solver fails or crashes, the Explanation LLM utilizes an "Error Branch" prompt. It treats the failed code as a hint to deduce the most logical answer, ensuring a robust fallback response.
+## Evaluation Alignment
+The system is optimized around the three scoring dimensions. For **P1 correctness**, answer selection is anchored to symbolic execution rather than unconstrained text. For **P2 explanation quality**, the response explains the applicable law, premise chain, or calculation path in natural language. For **P3 reasoning depth**, the API returns structured evidence fields: `fol`, `cot` as a concise derivation summary, `premises`, and calibrated `confidence`. The API sanitizer enforces valid output types, clamps confidence to `[0, 1]`, and guarantees non-empty mandatory `answer` and `explanation` fields.
 
-## 3. Models Used
-To comply with the ≤ 8B parameters rule and optimize VRAM via Single-Resident Swap (`llama-server`), we fine-tuned two specialized models:
-- **`Qwen2.5-Coder-7B` (Fine-tuned):** Optimized specifically for translating natural language premises into Z3 syntax and Physics problems into SymPy equations.
-- **`Qwen2.5-7B-Instruct` (Fine-tuned):** Optimized for generating human-readable explanations, Chain-of-Thought, and structured JSON outputs based on solver results.
+## Models and Serving
+- **Qwen2.5-Coder-7B-Instruct, fine-tuned:** formal program generation for Z3 and SymPy.
+- **Qwen2.5-7B-Instruct, fine-tuned:** final structured explanation and JSON response generation.
+- Models are served locally through `llama.cpp` / `llama-server`. The HTTP interface is OpenAI-compatible only at the protocol level; it does not call OpenAI, GPT, Claude, Gemini, or any commercial model endpoint.
 
-## 4. Tools & External Components
-- **Orchestration:** LangGraph, LangChain
-- **Serving:** `llama.cpp` (OpenAI-compatible server)
-- **Solvers:** `z3-solver` (Theorem Prover), `sympy` (Symbolic Mathematics)
-- **Retrieval:** LlamaIndex, Qdrant (Vector DB)
-- **Embeddings & Reranking:** `BAAI/bge-m3` (Embeddings), `BAAI/bge-reranker-base` (Cross-encoder reranking)
+## Data and Compliance
+All training, retrieval, and evaluation sources are disclosed in the Data Disclosure Document. The pipeline does not use closed-source LLMs for training data generation, preprocessing, retrieval, evaluation, or inference. If the internally digitized Electro textbook set cannot be accompanied by a complete bibliography, it must be excluded from training, RAG, and final submission artifacts.

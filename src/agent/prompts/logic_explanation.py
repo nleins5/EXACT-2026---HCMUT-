@@ -1,17 +1,16 @@
-"""Prompt cho logic_explanation node — sinh ExactResponse JSON.
+"""Prompts for logic_explanation node."""
 
-Hai nhanh prompt mirror dataset instruct.jsonl:
-- SUCCESS branch: code Z3 chay OK -> tin code_output, format JSON.
-- ERROR branch: code Z3 fail -> doc code nhu hint, tu suy luan, ha confidence.
-"""
-
-# Branch khi solver thanh cong: chi can format ket qua thanh ExactResponse.
 LOGIC_OUTPUT_PROMPT = """You are a Logic Explainer.
 
 The Z3 solver ran successfully. Use its verified output to produce the final structured response.
 
 Problem:
 {question}
+
+Z3 Code Used (tool call):
+```python
+{generated_code}
+```
 
 Z3 Solver Output (trusted):
 {code_output}
@@ -20,7 +19,7 @@ Return a structured response matching the schema:
 - answer: REQUIRED. (A, B, C, Yes, No, Unknown, or numeric value).
 - explanation: REQUIRED. Human-readable, references the relevant premises.
 - fol: optional First-Order Logic formalization.
-- cot: optional list of reasoning steps.
+- cot: REQUIRED. List of reasoning steps. You MUST include one step that references the Z3 solver tool call and its output (e.g., "Used Z3 theorem prover to verify: ..."). This is required for evaluation transparency.
 - premises: optional list of rules used.
 - confidence: optional float 0.0-1.0.
 

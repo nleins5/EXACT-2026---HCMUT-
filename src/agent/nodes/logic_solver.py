@@ -1,42 +1,34 @@
-"""
-Logic Solver Node — Thực thi mã Z3 trong subprocess an toàn.
-
-Sau khi thực thi:
-- Nếu thành công  → set code_error=False, lưu stdout vào code_output.
-  Thêm: parse output để normalize prediction (True/False/Unknown).
-- Nếu thất bại    → set code_error=True,  lưu thông báo lỗi vào error_message.
-
-Solver KHÔNG raise — luôn để pipeline đi tiếp đến explanation node, node đó
-sẽ chọn prompt phù hợp (success vs error) dựa trên flag này.
-"""
+"""Logic Solver Node — execute Z3 code in a sandboxed subprocess."""
 import subprocess
 import sys
 from src.agent.state import AgentState
+from src.core.config import settings
 from src.utils.logger import logger
 from src.utils.z3_output_parser import parse_z3_output
 
+_SOLVER_TIMEOUT = settings.solver.timeout_s
+
 
 def logic_solver_node(state: AgentState) -> dict:
-    """Thực thi mã Z3 đã sinh ra, ghi nhận kết quả/lỗi vào intermediate_answer."""
     intermediate = state.get("intermediate_answer", {})
     code = intermediate.get("generated_code", "")
 
     if not code:
         intermediate["code_output"] = ""
         intermediate["code_error"] = True
-        intermediate["error_message"] = "Không có mã code để thực thi (formalizer trả về rỗng)."
+        intermediate["error_message"] = "No code to execute (formalizer returned empty)."
         return {"intermediate_answer": intermediate}
 
     try:
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=_SOLVER_TIMEOUT,
         )
         if result.returncode == 0:
             raw_output = result.stdout.strip()
-            # Parse and normalize the Z3 output
+
             prediction = parse_z3_output(raw_output)
-            # Store both raw output and normalized prediction
+
             intermediate["code_output"] = f"Predicted: {prediction}"
             intermediate["code_error"] = False
             intermediate["error_message"] = ""
@@ -50,13 +42,12 @@ def logic_solver_node(state: AgentState) -> dict:
     except subprocess.TimeoutExpired:
         intermediate["code_output"] = ""
         intermediate["code_error"] = True
-        intermediate["error_message"] = "Quá thời gian thực thi (30s)."
-        logger.warning("Z3 Solver: timeout 30s")
+        intermediate["error_message"] = f"Execution timed out ({_SOLVER_TIMEOUT}s)."
+        logger.warning(f"Z3 Solver: timeout {_SOLVER_TIMEOUT}s")
     except Exception as e:
         intermediate["code_output"] = ""
         intermediate["code_error"] = True
-        intermediate["error_message"] = f"Lỗi khi gọi subprocess: {e}"
+        intermediate["error_message"] = f"Subprocess error: {e}"
         logger.error(f"Z3 Solver exception: {e}")
 
     return {"intermediate_answer": intermediate}
-

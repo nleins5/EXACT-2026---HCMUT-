@@ -23,11 +23,12 @@ import json
 import re
 import os
 import argparse
+from pathlib import Path
 
 
 # ─── Default Paths ─────────────────────────────────────────────────────────
 
-DEFAULT_OUTPUT_DIR = r'd:\Exact 2026\data\sft_dataset'
+DEFAULT_OUTPUT_DIR = str(Path(__file__).resolve().parents[1] / "data" / "sft_dataset")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

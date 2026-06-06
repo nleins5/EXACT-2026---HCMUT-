@@ -1,14 +1,6 @@
-"""
-EXACT 2026 — Main LangGraph Pipeline (Sequential, no parallel branches)
+"""EXACT 2026 — LangGraph Pipeline (Sequential + Retry Loop)."""
+from typing import Literal
 
-Graph flow:
-    classify
-      ├─ logic    → logic_formalizer  → logic_solver  → logic_explanation  → END
-      └─ physics  → physics_rag → physics_formalizer → physics_solver → physics_explanation → END
-
-Solvers set `intermediate_answer.code_error`. Explanation nodes branch on that flag
-internally to choose between SUCCESS and ERROR prompts (no extra LLM call).
-"""
 from langgraph.graph import StateGraph, END
 from src.agent.state import AgentState
 from src.agent.nodes.classifier import classify_node, route_after_classify
@@ -19,30 +11,86 @@ from src.agent.nodes.physics_rag import physics_rag_node
 from src.agent.nodes.physics_formalizer import physics_formalizer_node
 from src.agent.nodes.physics_solver import physics_solver_node
 from src.agent.nodes.physics_explanation import physics_explanation_node
+from src.core.config import settings
 from src.utils.logger import logger
+
+_MAX_RETRIES = settings.solver.max_retries
+
+
+# ── Retry routing functions ──────────────────────────────────────────
+
+
+def _route_after_logic_solver(state: AgentState) -> str:
+    intermediate = state.get("intermediate_answer", {})
+    retry_count = state.get("retry_count", 0)
+
+    if intermediate.get("code_error", False) and retry_count < _MAX_RETRIES:
+        logger.info(
+            f"Logic solver failed (retry {retry_count + 1}/{_MAX_RETRIES}), "
+            f"retrying formalizer with error feedback."
+        )
+        return "logic_formalizer_retry"
+    return "logic_explanation"
+
+
+def _route_after_physics_solver(state: AgentState) -> str:
+    intermediate = state.get("intermediate_answer", {})
+    retry_count = state.get("retry_count", 0)
+
+    if intermediate.get("code_error", False) and retry_count < _MAX_RETRIES:
+        logger.info(
+            f"Physics solver failed (retry {retry_count + 1}/{_MAX_RETRIES}), "
+            f"retrying formalizer with error feedback."
+        )
+        return "physics_formalizer_retry"
+    return "physics_explanation"
+
+
+
+
+
+def _logic_retry_node(state: AgentState) -> dict:
+    retry_count = state.get("retry_count", 0) + 1
+    intermediate = state.get("intermediate_answer", {})
+    intermediate["retry_error_feedback"] = intermediate.get("error_message", "")
+    logger.info(f"Logic retry node: attempt {retry_count}")
+    result = logic_formalizer_node(state)
+    result["retry_count"] = retry_count
+    return result
+
+
+def _physics_retry_node(state: AgentState) -> dict:
+    retry_count = state.get("retry_count", 0) + 1
+    intermediate = state.get("intermediate_answer", {})
+    intermediate["retry_error_feedback"] = intermediate.get("error_message", "")
+    logger.info(f"Physics retry node: attempt {retry_count}")
+    result = physics_formalizer_node(state)
+    result["retry_count"] = retry_count
+    return result
 
 
 def build_graph() -> StateGraph:
-    """Xây dựng và biên dịch pipeline LangGraph (sequential)."""
 
     workflow = StateGraph(AgentState)
 
-    # ── Nodes ──
+
     workflow.add_node("classify",             classify_node)
 
     workflow.add_node("logic_formalizer",     logic_formalizer_node)
     workflow.add_node("logic_solver",         logic_solver_node)
     workflow.add_node("logic_explanation",    logic_explanation_node)
+    workflow.add_node("logic_formalizer_retry", _logic_retry_node)
 
     workflow.add_node("physics_rag",          physics_rag_node)
     workflow.add_node("physics_formalizer",   physics_formalizer_node)
     workflow.add_node("physics_solver",       physics_solver_node)
     workflow.add_node("physics_explanation",  physics_explanation_node)
+    workflow.add_node("physics_formalizer_retry", _physics_retry_node)
 
-    # ── Entry Point ──
+
     workflow.set_entry_point("classify")
 
-    # ── Conditional Routing (single branch, not fan-out) ──
+
     workflow.add_conditional_edges(
         "classify",
         route_after_classify,
@@ -52,26 +100,41 @@ def build_graph() -> StateGraph:
         },
     )
 
-    # ── Logic Branch (sequential) ──
+    # Logic branch
     workflow.add_edge("logic_formalizer",  "logic_solver")
-    workflow.add_edge("logic_solver",      "logic_explanation")
+    workflow.add_conditional_edges(
+        "logic_solver",
+        _route_after_logic_solver,
+        {
+            "logic_formalizer_retry": "logic_formalizer_retry",
+            "logic_explanation":      "logic_explanation",
+        },
+    )
+    workflow.add_edge("logic_formalizer_retry", "logic_solver")
     workflow.add_edge("logic_explanation", END)
 
-    # ── Physics Branch (sequential) ──
+    # Physics branch
     workflow.add_edge("physics_rag",         "physics_formalizer")
     workflow.add_edge("physics_formalizer",  "physics_solver")
-    workflow.add_edge("physics_solver",      "physics_explanation")
+    workflow.add_conditional_edges(
+        "physics_solver",
+        _route_after_physics_solver,
+        {
+            "physics_formalizer_retry": "physics_formalizer_retry",
+            "physics_explanation":      "physics_explanation",
+        },
+    )
+    workflow.add_edge("physics_formalizer_retry", "physics_solver")
     workflow.add_edge("physics_explanation", END)
 
     return workflow.compile()
 
 
-# Singleton
+
 _graph = None
 
 
 def get_graph():
-    """Lấy hoặc khởi tạo instance của graph."""
     global _graph
     if _graph is None:
         logger.info("Compiling LangGraph pipeline...")
@@ -83,24 +146,27 @@ def run_pipeline(
     question: str,
     premises: list[str] = None,
     collection_name: str = "logic_regulations",
+    task_type: Literal["logic", "physics"] | None = None,
 ) -> dict:
     """
-    Điểm đầu vào chính để chạy toàn bộ pipeline.
+    Main entry point for the pipeline.
 
     Args:
-        question: Câu hỏi từ người dùng.
-        premises: Danh sách giả thiết (cho bài toán logic).
-        collection_name: Tên collection Vector DB cho RAG.
+        question: Input question.
+        premises: List of premises (for logic tasks).
+        collection_name: RAG collection name.
+        task_type: Explicit task type from API if provided.
 
     Returns:
-        Dictionary chứa đáp án, lập luận và code đã thực thi.
+        Dict with answer, explanation, and execution artifacts.
     """
     graph = get_graph()
 
     initial_state: AgentState = {
         "question": question,
         "premises": premises or [],
-        "task_type": "logic",
+        "task_type": task_type or "logic",
+        "requested_task_type": task_type,
         "intermediate_answer": {
             "context_rag": "",
             "context_code": "",
@@ -108,6 +174,7 @@ def run_pipeline(
             "code_output": "",
             "code_error": False,
             "error_message": "",
+            "retry_error_feedback": "",
             "reasoning": "",
             "final_output": "",
         },
@@ -122,6 +189,7 @@ def run_pipeline(
         "error": "",
         "collection_name": collection_name,
         "context": "",
+        "retry_count": 0,
     }
 
     logger.info(f"Processing: {question[:100]}...")
@@ -142,4 +210,5 @@ def run_pipeline(
         "code_output":  intermediate.get("code_output"),
         "code_error":   intermediate.get("code_error", False),
         "error_message": intermediate.get("error_message", ""),
+        "retry_count":  result.get("retry_count", 0),
     }

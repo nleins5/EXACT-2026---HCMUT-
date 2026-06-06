@@ -27,6 +27,5 @@ httpx
 z3-solver
 sympy
 
-# Knowledge distillation (offline pipeline only - khong import o runtime)
-google-generativeai
-langchain-google-genai
+# Closed-source LLM APIs are prohibited by the competition rules.
+# Do not add commercial provider SDKs (GPT/Claude/Gemini/etc.) here.

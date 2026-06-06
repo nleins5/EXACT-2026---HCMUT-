@@ -81,11 +81,12 @@ Pipeline build dataset fine-tune.
 
 ### distill/
 
-Knowledge distillation cho RAG.
+Knowledge extraction cho RAG. Closed-source LLM APIs are prohibited; any teacher
+pipeline must be self-hosted/open-source and fully disclosed before use.
 
 | File | Mục đích |
 |------|----------|
-| `distill_physics.py` | Teacher LLM (Gemini) trích xuất KB từ BTC/Electro |
+| `distill_physics.py` | Disabled unless replaced by an auditable open-source/self-hosted extraction pipeline |
 | `verify_kb.py` | Exec SymPy code, mark `verified=true/false` |
 | `fetch_physics_formulae.py` | Crawl PhysicsFormulae GitHub |
 
@@ -120,7 +121,7 @@ Build vector index Qdrant.
 
 ```
 BTC Data → data_prep → coder.jsonl/instruct.jsonl → fine_tune → GGUF
-BTC/Electro → distill → physics_kb → rag → Qdrant index → runtime RAG
+BTC/Electro → deterministic/open-source extraction → physics_kb → rag → Qdrant index → runtime RAG
 PhysicsFormulae → fetch_physics_formulae → physics_kb
 ```
 
@@ -131,5 +132,5 @@ pip install -r requirements.txt
 ```
 
 - **data_prep**: `datasets`, `z3-solver`, `sympy`, `pandas`, `python-dotenv`
-- **distill**: `google-generativeai`
+- **distill**: closed-source provider SDKs are prohibited; do not install GPT/Claude/Gemini clients
 - **rag**: `qdrant-client`, `llama-index`, `FlagEmbedding`

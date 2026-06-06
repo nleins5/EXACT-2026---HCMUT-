@@ -60,7 +60,7 @@ Tài liệu mô tả chi tiết từng dataset trong project, bao gồm nguồn 
 
 | File | Records | Nguồn | Script tạo |
 |------|---------|-------|------------|
-| `physics_kb.formulas.jsonl` | 363 | BTC Physics CSV (trích xuất qua Gemini API) | `scripts/convert_physics_to_sympy.py` |
+| `physics_kb.formulas.jsonl` | 363 | BTC Physics CSV (deterministic extraction, no closed-source LLM) | `scripts/convert_physics_to_sympy.py` |
 | `physics_kb.from_pf.jsonl` | 29 | PhysicsFormulae GitHub (curated) | `scripts/convert_physics_to_sympy.py` |
 
 **Build vector index**:
@@ -94,7 +94,7 @@ Tài liệu mô tả chi tiết từng dataset trong project, bao gồm nguồn 
 
 **Fields**: `id`, `question`, `cot`, `answer`, `unit`
 
-**Mục đích**: Nguồn cho fine-tune Coder (SymPy), Instruct (physics explanation), và RAG (distill formulas)
+**Mục đích**: Nguồn cho fine-tune Coder (SymPy), Instruct (physics explanation), và RAG (formula/worked-example extraction)
 
 ---
 
@@ -114,7 +114,7 @@ Tài liệu mô tả chi tiết từng dataset trong project, bao gồm nguồn 
 
 **File**: `data/collected/electro_sympy_dataset.jsonl` (242 records)
 
-**Nguồn**: Sinh từ `electro_dataset.jsonl` bằng model (để biết model nào đã tạo)
+**Nguồn**: Sinh từ `electro_dataset.jsonl` bằng script chuyển đổi SymPy/open-source symbolic tooling; không dùng closed-source LLM
 
 **Fields**: `id`, `questions`, `solution`, `final_answers`, `sympy_code`
 
@@ -140,7 +140,7 @@ Tài liệu mô tả chi tiết từng dataset trong project, bao gồm nguồn 
 |---------|----------|-------|--------|---------|
 | `coder.jsonl` | Fine-tune Coder | BTC + FOLIO + Electro | `scripts/data_prep/prepare_coder_dataset.py` | ~1,391 |
 | `instruct.jsonl` | Fine-tune Instruct | BTC + FOLIO + Electro | `scripts/data_prep/prepare_instruct_dataset.py` | ~2,518 |
-| `physics_kb.formulas.jsonl` | RAG (formulas) | BTC Physics (Gemini extract) | `scripts/convert_physics_to_sympy.py` | 363 |
+| `physics_kb.formulas.jsonl` | RAG (formulas) | BTC Physics (deterministic extraction) | `scripts/convert_physics_to_sympy.py` | 363 |
 | `physics_kb.from_pf.jsonl` | RAG (formulas) | PhysicsFormulae GitHub | `scripts/convert_physics_to_sympy.py` | 29 |
 
 ---
@@ -164,7 +164,7 @@ data/finetune/coder.jsonl + instruct.jsonl → Fine-tune → GGUF
 
 BTC Physics CSV
     ↓
-scripts/convert_physics_to_sympy.py (Gemini API extract formulas)
+scripts/convert_physics_to_sympy.py (deterministic formula extraction; no closed-source LLM)
     ↓
 data/distilled/physics_kb.formulas.jsonl
 
@@ -188,5 +188,5 @@ storage/vector_db/ → physics_rag_node (runtime)
 - **Fine-tune datasets**: Đã filter Q19 (drop rows có `id` bắt đầu bằng `QA`)
 - **Electro**: Dataset nội bộ (textbook điện từ), không phải từ BTC hay GitHub
 - **PhysicsFormulae**: Facts (công thức) không bản quyền, LaTeX đã transform sang plain math
-- **Distillation**: Dùng Gemini Flash Lite để trích xuất formulas từ CoT trong BTC Physics
+- **Closed-source LLM use**: Không dùng GPT/Claude/Gemini hoặc API thương mại cho training, preprocessing, RAG hay inference
 - **FOLIO**: Dataset logic từ Yale NLP (https://huggingface.co/datasets/yale-nlp/FOLIO)

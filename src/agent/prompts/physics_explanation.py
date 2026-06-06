@@ -1,7 +1,4 @@
-"""Prompt cho physics_explanation node — sinh ExactResponse JSON cho bai vat ly.
-
-Mirror cau truc instruct.jsonl: SUCCESS dung code_output, ERROR doc code lam hint.
-"""
+"""Prompts for physics_explanation node."""
 
 PHYSICS_OUTPUT_PROMPT = """You are a Physics Problem Solver.
 
@@ -10,6 +7,11 @@ The SymPy solver ran successfully. Use its verified output to produce the final 
 Problem:
 {question}
 
+SymPy Code Used (tool call):
+```python
+{generated_code}
+```
+
 Calculation Output (trusted):
 {code_output}
 
@@ -17,7 +19,7 @@ Return a structured response matching the schema:
 - answer: REQUIRED. Final numerical result with unit.
 - explanation: REQUIRED. Identify formula, substitute, compute.
 - fol: optional formal representation.
-- cot: optional list of reasoning steps.
+- cot: REQUIRED. List of reasoning steps. You MUST include one step that references the SymPy solver tool call and its output (e.g., "Executed SymPy code to compute: ..."). This is required for evaluation transparency.
 - premises: optional list of physics laws used.
 - confidence: optional float 0.0-1.0.
 

@@ -19,7 +19,7 @@ Hệ thống kết hợp khả năng suy luận của LLM với các công cụ 
 
 - **🧠 Dual-specialist LLM**: 2 mô hình fine-tuned chuyên biệt — `Qwen2.5-Coder-7B` sinh code Z3/SymPy, `Qwen2.5-7B-Instruct` sinh giải thích JSON.
 
-- **🛰️ OpenAI-compatible serving**: Phục vụ qua `llama-server` (llama.cpp) — expose `/v1/chat/completions`.
+- **🛰️ OpenAI-compatible serving**: Phục vụ qua self-hosted `llama-server` (llama.cpp) — expose `/v1/chat/completions`. "OpenAI-compatible" chỉ là protocol, không dùng OpenAI/GPT API.
 
 - **♻️ Single-resident swap**: `LlamaServerSupervisor` quản lý vòng đời tiến trình, swap GGUF coder ↔ instruct giữa các stage.
 
@@ -77,6 +77,15 @@ classify (rule-based)
 ```
 
 Mỗi request swap tối đa 1 lần (Coder → Instruct). Solver chạy subprocess, timeout 30s.
+Theo Official Q&A, `POST /predict` cũng nhận explicit query type (`task_type`, `query_type`, `type`, `type-1/type-2`); nếu thiếu field này thì classifier fallback bằng `premises-NL`.
+
+### Q&A compliance highlights
+
+- **Q3/Q5/Q14**: LLM được self-host qua OpenAI-compatible `llama-server`; `LlamaServerSupervisor` giữ tối đa 1 model resident và `/v1/models` phục vụ audit metadata.
+- **Q7/Q8**: Z3/SymPy/RAG là tool hợp lệ; explanation prompts bắt buộc đưa solver evidence vào `cot`.
+- **Q13**: API budget mặc định là 58 giây/request để nằm dưới hard cap 60 giây.
+- **Q18/Q19**: Một endpoint xử lý cả logic và physics; data prep đã filter physics records có id bắt đầu bằng `QA`.
+- **No closed-source LLMs**: Không dùng GPT, Claude, Gemini hoặc API thương mại cho training, preprocessing, RAG, evaluation hay inference.
 
 ---
 

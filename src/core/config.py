@@ -86,8 +86,13 @@ class LangsmithConfig(BaseModel):
 
 
 class APIConfig(BaseModel):
-    """Cau hinh tang HTTP — budget timeout, ..."""
-    request_budget_seconds: int = 600
+    """HTTP layer config."""
+    request_budget_seconds: int = 58
+
+
+class SolverConfig(BaseModel):
+    timeout_s: int = 20
+    max_retries: int = 1
 
 
 class AppConfig(BaseModel):
@@ -100,12 +105,12 @@ class AppConfig(BaseModel):
 
 
 class DistillationTeacherConfig(BaseModel):
-    """Teacher LLM config (Gemini/OpenAI) goi offline de sinh KB."""
-    provider: str = "gemini"
-    model_name: str = "gemini-2.5-flash-lite"
+    """Optional offline teacher config. Closed-source LLM APIs are prohibited."""
+    provider: str = "none"
+    model_name: str = ""
     temperature: float = 0.1
     max_output_tokens: int = 1024
-    api_key_env: str = "GOOGLE_API_KEY"
+    api_key_env: str = ""
 
 
 class DistillationPipelineConfig(BaseModel):
@@ -139,6 +144,7 @@ class Settings(BaseSettings):
     app: AppConfig
     llm: LLMConfig
     api: APIConfig
+    solver: SolverConfig = Field(default_factory=SolverConfig)
     rag: RagConfig
     embedding: EmbeddingConfig
     retrieval: RetrievalConfig

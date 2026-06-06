@@ -1,14 +1,11 @@
 app:
   project_name: Exact 2026
   version: 1.0.0
-  debug: true
+  debug: false
 
-# Cau hinh LLM ── 2 model dual-specialist + 1 server llama.cpp
-# BTC Q3 (single-resident): supervisor swap process khi doi role.
-# BTC Q5 (OpenAI-style serving): dung llama-server expose /v1/chat/completions.
 llm:
   server:
-    binary: bin/llama-cpp/llama-server.exe
+    binary: llama-server
     host: 127.0.0.1
     port: 8001
     base_url: http://127.0.0.1:8001/v1
@@ -16,7 +13,7 @@ llm:
     startup_timeout_s: 60
     shutdown_timeout_s: 5
     n_ctx: 4096
-    n_gpu_layers: 0      # 0 = CPU only. -1 = full GPU. Override: env LLAMA_NGL.
+    n_gpu_layers: -1      # -1 = full Metal GPU offload (Apple Silicon)
     extra_args: []       # vd: ["--flash-attn", "--mlock"]
 
   coder:
@@ -32,7 +29,12 @@ llm:
     max_tokens: 1024
 
 api:
-  request_budget_seconds: 600   # cuoc thi: set 58 qua env EXACT_REQUEST_BUDGET_SECONDS
+  request_budget_seconds: 58    # Q&A Q13: hard cap 60s/request; keep 2s margin.
+
+# Solver subprocess settings (Q13 timing + Slide 27 iterative refinement)
+solver:
+  timeout_s: 20                   # Q13: was 30s, reduced to 20s for safety margin
+  max_retries: 1                  # Slide 27: if solver fails, retry formalizer once
 
 rag:
   reranker: BAAI/bge-reranker-base
@@ -54,16 +56,16 @@ langsmith:
   project: Exact 2026
   endpoint: https://api.smith.langchain.com
 
-# Knowledge distillation (offline pipeline)
-# Goi teacher LLM de TRICH XUAT cong thuc tu CoT co san trong dataset BTC,
-# KHONG goi tai runtime.
+# Knowledge extraction (offline pipeline)
+# Closed-source teacher APIs are prohibited. Keep provider disabled unless an
+# auditable open-source, self-hosted teacher pipeline is added and disclosed.
 distillation:
   teacher:
-    provider: gemini                  # gemini | openai
-    model_name: gemini-2.5-flash-lite # re nhat trong dong Flash
+    provider: none
+    model_name: ""
     temperature: 0.1                  # extraction can deterministic
     max_output_tokens: 1024           # output ngan vi chi extract
-    api_key_env: GOOGLE_API_KEY       # ten env var, KHONG hardcode key
+    api_key_env: ""
   pipeline:
     mode: extract                     # extract | generate
     concurrency: 8                    # so request song song

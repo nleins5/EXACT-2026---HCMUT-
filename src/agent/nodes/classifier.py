@@ -1,6 +1,7 @@
 """Classifier Node — phan loai cau hoi thanh logic / physics.
 
 Logic phan loai (rule-based, KHONG goi LLM):
+- Neu evaluator gui explicit `task_type` / `query_type` -> ton trong field do.
 - Co `premises[]` -> logic (Type 1, BTC slide 12).
 - Khong co premises -> physics (Type 2).
 
@@ -12,6 +13,11 @@ from src.utils.logger import logger
 
 def classify_node(state: AgentState) -> dict:
     """Phan loai cau hoi thanh logic hoac physics dua tren su ton tai cua premises."""
+    requested_task_type = state.get("requested_task_type")
+    if requested_task_type in {"logic", "physics"}:
+        logger.info("Classifier: explicit task_type=%s from request.", requested_task_type)
+        return {"task_type": requested_task_type}
+
     premises = state.get("premises", []) or []
 
     if premises:

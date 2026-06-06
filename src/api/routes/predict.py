@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from typing import Any
 
 from fastapi import APIRouter, Request
 
@@ -25,18 +26,60 @@ def _request_timeout() -> float:
     return float(settings.api.request_budget_seconds)
 
 
+def _as_text(value: Any, default: str = "") -> str:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        text = value.strip()
+        return text or default
+    return str(value).strip() or default
+
+
+def _as_text_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, (list, tuple, set)):
+        return [_as_text(item) for item in value if _as_text(item)]
+    return [_as_text(value)] if _as_text(value) else []
+
+
+def _as_confidence(value: Any) -> float:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return min(1.0, max(0.0, confidence))
+
+
 def _sanitize_response(result: dict) -> PredictResponse:
-    answer = str(result.get("answer") or "Unknown")
-    if answer.lower() == "error" or result.get("code_error"):
-        return fallback_response(result.get("error_message") or None)
+    answer = _as_text(result.get("answer"), default="Unknown")
+
+    if answer.lower() in {"error", "unknown", ""}:
+        if result.get("error_message"):
+            logger.warning("Returning fallback — internal: %s", result["error_message"])
+        return fallback_response()
+
+    confidence = _as_confidence(result.get("confidence"))
+    explanation = _as_text(result.get("explanation"))
+
+    if result.get("code_error"):
+        confidence = min(confidence, 0.4)
+        logger.info("Solver errored but explanation recovered answer=%s", answer)
+
+    if not explanation:
+        explanation = "The system returned an answer but did not provide a detailed explanation."
+        confidence = min(confidence, 0.3)
 
     return PredictResponse(
         answer=answer,
-        explanation=str(result.get("explanation") or ""),
-        fol=str(result.get("fol") or ""),
-        cot=result.get("cot") or [],
-        premises=result.get("premises") or [],
-        confidence=float(result.get("confidence") or 0.0),
+        explanation=explanation,
+        fol=_as_text(result.get("fol")),
+        cot=_as_text_list(result.get("cot")),
+        premises=_as_text_list(result.get("premises")),
+        confidence=confidence,
     )
 
 
@@ -50,7 +93,8 @@ async def predict_endpoint(
     question_preview = payload.question[:120].replace("\n", " ")
 
     logger.info(
-        "POST /predict premises=%s timeout=%ss question=%s",
+        "POST /predict task_type=%s premises=%s timeout=%ss question=%s",
+        payload.task_type or "auto",
         len(payload.premises_nl),
         timeout,
         question_preview,
@@ -62,6 +106,7 @@ async def predict_endpoint(
                 run_pipeline,
                 payload.question,
                 payload.premises_nl,
+                task_type=payload.task_type,
             ),
             timeout=timeout,
         )
@@ -75,9 +120,7 @@ async def predict_endpoint(
         return response
     except asyncio.TimeoutError:
         logger.warning("POST /predict timed out after %.3fs", timeout)
-        return fallback_response("timeout")
+        return fallback_response()
     except Exception as exc:
-        logger.exception("POST /predict failed")
-        if getattr(request.app.state, "debug", False):
-            return fallback_response(str(exc))
+        logger.exception("POST /predict failed: %s", exc)
         return fallback_response()

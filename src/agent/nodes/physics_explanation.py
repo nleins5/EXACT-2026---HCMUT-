@@ -36,6 +36,7 @@ def physics_explanation_node(state: AgentState) -> dict:
         else:
             prompt = PHYSICS_OUTPUT_PROMPT.format(
                 question=state["question"],
+                generated_code=intermediate.get("generated_code", ""),
                 code_output=intermediate.get("code_output", ""),
             )
             logger.info("Physics explanation: dung SUCCESS prompt.")

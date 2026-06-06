@@ -58,7 +58,7 @@ def physics_rag_node(state: AgentState) -> dict:
     """
     try:
         from src.retrieval.engine import Retriever
-        retriever = Retriever()
+        retriever = Retriever.get_instance()
         question = state["question"]
 
         # Per-topic formulas (uu tien lay)

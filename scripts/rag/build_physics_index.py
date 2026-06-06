@@ -82,8 +82,13 @@ def _format_topic_text(topic: str, formulas_set: list[str], symbols_map: dict[st
 
 
 def _load_verified(paths: list[Path]) -> list[KBRecord]:
-    """Load từ một hay nhiều file JSONL, chỉ giữ record verified=True."""
+    """Load từ một hay nhiều file JSONL, chỉ giữ record verified=True.
+
+    Q19: Also filters out records with IDs starting with 'QA' (401 annotation
+    errors in the Physics dataset that BTC confirmed should be excluded).
+    """
     out: list[KBRecord] = []
+    n_qa_filtered = 0
     for path in paths:
         if not path.exists():
             logger.warning(f"  [skip] not found: {path}")
@@ -99,10 +104,16 @@ def _load_verified(paths: list[Path]) -> list[KBRecord]:
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"  [skip] malformed line in {path.name}: {e}")
                     continue
+                # Q19: Filter out QA-prefixed annotation errors
+                if rec.id and str(rec.id).upper().startswith("QA"):
+                    n_qa_filtered += 1
+                    continue
                 if rec.verified is True:
                     out.append(rec)
                     n_kept += 1
         logger.info(f"  loaded {n_kept} verified records from {path.name}")
+    if n_qa_filtered > 0:
+        logger.info(f"  [Q19] Filtered out {n_qa_filtered} QA-prefixed records.")
     return out
 
 
