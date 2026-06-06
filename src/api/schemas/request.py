@@ -23,7 +23,7 @@ PremiseText = Annotated[
 
 
 class PredictRequest(BaseModel):
-    """Unified BTC request for both logic and physics questions."""
+    """Normalize the distinct BTC Task 1 and Task 2 payloads."""
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -40,9 +40,16 @@ class PredictRequest(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def normalize_task_type_aliases(cls, data: Any) -> Any:
+    def normalize_evaluator_payload(cls, data: Any) -> Any:
         if not isinstance(data, dict):
             return data
+
+        data = dict(data)
+        if data.get("question") is None and data.get("questions") is not None:
+            data["question"] = data["questions"]
+
+        if data.get("premises-NL") is None and data.get("premise-NL") is not None:
+            data["premises-NL"] = data["premise-NL"]
 
         if data.get("task_type") is not None:
             data["task_type"] = _normalize_task_type(data.get("task_type"))

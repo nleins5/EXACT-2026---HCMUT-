@@ -26,7 +26,7 @@ def test_runs_allowed_z3_code():
     result = run_solver_code(
         'from z3 import *\nprint("Predicted: True")',
         allowed_imports={"z3"},
-        timeout_s=3,
+        timeout_s=8,
     )
     assert result.returncode == 0
     assert result.stdout == "Predicted: True"

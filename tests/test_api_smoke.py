@@ -32,9 +32,8 @@ def test_health_and_predict_contract(monkeypatch):
         prediction = client.post(
             "/predict",
             json={
-                "question": "Is A true?",
-                "premises-NL": ["A"],
-                "task_type": "logic",
+                "questions": "Is A true?",
+                "premise-NL": ["A"],
             },
         )
 

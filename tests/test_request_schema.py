@@ -26,6 +26,25 @@ def test_premises_string_is_normalized():
     assert request.premises_nl == ["All cats are mammals."]
 
 
+def test_task_1_official_payload_is_normalized():
+    request = PredictRequest.model_validate(
+        {
+            "questions": "Are cats mammals?",
+            "premise-NL": "All cats are mammals.",
+        }
+    )
+
+    assert request.question == "Are cats mammals?"
+    assert request.premises_nl == ["All cats are mammals."]
+
+
+def test_task_2_official_payload_is_normalized():
+    request = PredictRequest.model_validate({"question": "What is force?"})
+
+    assert request.question == "What is force?"
+    assert request.premises_nl == []
+
+
 def test_blank_question_is_rejected():
     with pytest.raises(ValidationError):
         PredictRequest.model_validate({"question": "   "})

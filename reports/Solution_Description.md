@@ -4,12 +4,12 @@
 > The system runs a local FastAPI service that maps educational queries to formal programs. Rather than relying on LLMs for direct calculation, the service serves as an orchestrator: language models generate code, an isolated sandbox executes it with Z3 and SymPy, and the final response schema is validated locally.
 
 ## Architecture and Routing
-The service exposes a unified `/predict` endpoint. To avoid latency overhead, the request payload is parsed deterministically without an LLM classifier. If the query contains a non-empty `premises-NL` field, the router forwards the state to the Type 1 logic pipeline. If empty, the query is routed to the Type 2 physics pipeline. Any explicit `task_type` or `query_type` metadata is honored as a priority routing override.
+The service exposes a unified `/predict` endpoint. To avoid latency overhead, the request payload is parsed deterministically without an LLM classifier. Task 1 requests use `questions` plus a non-empty `premise-NL` field and route to the logic pipeline. Task 2 requests use `question` without a premise and route to the physics pipeline. Legacy aliases and any explicit `task_type` or `query_type` metadata remain supported.
 
 ## System Execution Pipeline
 | Stage | System Implementation | Engineering Control |
 |---|---|---|
-| Routing | Parse request keys (`premises-NL`, `task_type`) | Deterministic fast routing. |
+| Routing | Normalize Task 1 (`questions`, `premise-NL`) and Task 2 (`question`) keys | Deterministic fast routing. |
 | RAG | Retrieve reference equations and code templates | Local vector-rerank index; auto-skips on missing db. |
 | Generator | Code synthesis (Qwen2.5-Coder-7B) | Local inference server; structured templates. |
 | Sandbox | Subprocess script execution (Z3/SymPy) | AST constraint parsing, timeout daemon, isolated runtime. |

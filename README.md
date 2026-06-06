@@ -34,8 +34,8 @@ This repository contains the local FastAPI implementation for the EXACT 2026 Com
 
 ### 1. Unified Router
 Incoming requests are parsed dynamically by FastAPI payload keys. The router uses the payload format to direct the state machine:
-- Presence of a non-empty `premises-NL` value forwards the state to the Type 1 logic pipeline.
-- Absence of `premises-NL` routes to the Type 2 physics pipeline.
+- Task 1 payloads use `questions` plus a non-empty `premise-NL` value and route to the logic pipeline.
+- Task 2 payloads use `question` without `premise-NL` and route to the physics pipeline.
 - Explicit query type overrides (`task_type`, `query_type`) bypass default classification rules.
 
 ### 2. Isolated Execution Sandbox

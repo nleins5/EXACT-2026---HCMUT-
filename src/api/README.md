@@ -48,17 +48,24 @@ src/api/
 Nhận request chứa câu hỏi từ hệ thống chấm điểm BTC và trả về kết quả. (Nên code trong `routes/predict.py`).
 
 **Request Body (JSON):**
-Dựa trên Slide 32, BTC sẽ gửi data khác nhau tùy loại câu hỏi, nhưng quy chung về 1 schema (định nghĩa trong `schemas/request.py`):
+Dựa trên format chính thức, BTC gửi hai payload khác nhau. API chuẩn hóa cả hai về một schema nội bộ.
 
+Task 1:
 ```json
 {
-  "question": "Nội dung câu hỏi (Logic hoặc Vật lý)",
-  "task_type": "logic",
-  "premises-NL": ["Giả thiết 1 (chỉ có trong bài Type 1 Logic)", "Giả thiết 2"]
+  "questions": "Nội dung câu hỏi logic",
+  "premise-NL": "Giả thiết logic"
 }
 ```
 
-_Lưu ý:_ Theo Official Q&A Q18, payload test có thể gửi field chỉ định query type. API hỗ trợ các biến thể `task_type`, `query_type`, `problem_type`, `type`, `task-type`, `query-type` với giá trị như `logic`, `physics`, `type-1`, `type-2`, `1`, `2`. Nếu field này không có, classifier vẫn route dựa trên `premises-NL`: có premises → logic, rỗng → physics.
+Task 2:
+```json
+{
+  "question": "Nội dung câu hỏi vật lý"
+}
+```
+
+Để tương thích ngược, API cũng chấp nhận `question` cho Task 1, `premises-NL`, và các field chỉ định loại bài như `task_type`, `query_type`, `problem_type`, `type`, `task-type`, `query-type`. Nếu không có field chỉ định, classifier route dựa trên premise: có premise → logic, không có premise → physics.
 
 **Response Body (JSON):**
 Theo Slide 33, `answer` và `explanation` là bắt buộc. Các field còn lại là tùy chọn nhưng được khuyến khích để lấy điểm Reasoning Depth (P3). (Định nghĩa trong `schemas/response.py`).
