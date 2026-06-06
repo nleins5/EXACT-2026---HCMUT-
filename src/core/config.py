@@ -1,14 +1,10 @@
-"""Application config — load tu config/setting.yaml + .env.
+"""Application config — loads config/setting.yaml + .env."""
 
-Thiet ke 2 layer:
-- BaseModel (Pydantic) cho moi section nho.
-- Settings (BaseSettings) o ngoai cung — auto-load .env, support env var override.
-"""
 import os
 import sys
 from pathlib import Path
 
-# Them project root vao sys.path de import src.* duoc tu cli/test.
+
 sys.path.append(str(Path(__file__).parents[2]))
 
 import yaml
@@ -25,7 +21,7 @@ _SETTING_FILE = _PROJECT_ROOT / "config/setting.yaml"
 
 
 class LLMServerConfig(BaseModel):
-    """Cau hinh tien trinh llama-server (binary + port + tham so chung)."""
+
 
     binary: str
     host: str = "127.0.0.1"
@@ -40,7 +36,7 @@ class LLMServerConfig(BaseModel):
 
 
 class LLMRoleConfig(BaseModel):
-    """Cau hinh 1 role LLM (coder hoac instruct)."""
+
 
     model_name: str
     model_path: str
@@ -56,7 +52,7 @@ class LLMConfig(BaseModel):
     instruct: LLMRoleConfig
 
 
-# ── Cac section khac ─────────────────────────────────────────────────
+
 
 
 class EmbeddingConfig(BaseModel):
@@ -114,8 +110,7 @@ class DistillationTeacherConfig(BaseModel):
 
 
 class DistillationPipelineConfig(BaseModel):
-    # extract: trich xuat tu CoT co san trong dataset (re, deterministic).
-    # generate: sinh tu dau (dat, dung khi khong co CoT).
+
     mode: str = "extract"
     concurrency: int = 8
     max_retries: int = 3
@@ -136,9 +131,6 @@ class DistillationConfig(BaseModel):
 
 
 class Settings(BaseSettings):
-    """Top-level settings. Override bang env var:
-    - LANGSMITH_API_KEY (cho tracing).
-    """
     langsmith_api_key: str | None = Field(None, alias="LANGSMITH_API_KEY")
 
     app: AppConfig
@@ -158,7 +150,6 @@ class Settings(BaseSettings):
 
 
 def load_setting() -> Settings:
-    """Doc setting.yaml + merge env. Goi 1 lan o module level."""
     if not _SETTING_FILE.exists():
         raise FileNotFoundError(f"setting.yaml not found at {_SETTING_FILE}")
 

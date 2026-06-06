@@ -1,11 +1,4 @@
-"""OpenAI-compatible client tro ve `llama-server` local (BTC Q5).
-
-Vi sao khong reuse llama-cpp-python truc tiep:
-- BTC Q5 yeu cau /v1/models endpoint -> phai HTTP, khong duoc in-process.
-- llama-server chuan OpenAI -> ChatOpenAI plug-and-play.
-
-Port co dinh -> 1 instance ChatOpenAI dung cho moi role; chi can doi `model` header.
-"""
+"""OpenAI-compatible client targeting local llama-server."""
 from __future__ import annotations
 
 from typing import Any, Type
@@ -19,16 +12,7 @@ from src.utils.logger import logger
 
 
 class OpenAILLMClient(BaseLLM):
-    """Wrap `ChatOpenAI` voi cau hinh tro ve llama-server local.
-
-    Args:
-        role: "coder" hoac "instruct". Chon model_name + temperature + max_tokens
-              tuong ung tu settings.llm.<role>.
-
-    Note:
-        Field `model` trong request HTTP se la `model_name` cua role.
-        llama-server dung `--alias` de match field nay khi server start.
-    """
+    """Wraps ChatOpenAI pointed at local llama-server."""
 
     def __init__(self, role: str = "instruct"):
         cfg_server = settings.llm.server
@@ -52,12 +36,7 @@ class OpenAILLMClient(BaseLLM):
         )
 
     def get_llm(self, **kwargs) -> ChatOpenAI:
-        """Tra ve `ChatOpenAI` singleton bound vao role hien tai.
-
-        Args:
-            **kwargs: forward toi `ChatOpenAI(...)` trong lan dau khoi tao.
-                      Cac lan goi sau dung lai cache, kwargs bi ignore.
-        """
+        """Return a singleton ChatOpenAI bound to the current role."""
         if self._llm is not None:
             return self._llm
 
@@ -72,10 +51,6 @@ class OpenAILLMClient(BaseLLM):
         return self._llm
 
     def get_structured_llm(self, output_schema: Type[BaseModel]) -> Any:
-        """Tra ve LLM voi structured output (Pydantic schema enforcement).
-
-        Dung with_structured_output cua LangChain — tu dong ep kieu
-        output theo Pydantic schema.
-        """
+        """Return LLM with Pydantic structured output enforcement."""
         llm = self.get_llm()
         return llm.with_structured_output(output_schema)
