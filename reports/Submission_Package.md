@@ -4,7 +4,7 @@
 
 ## 1. Public API Endpoint
 
-**Public URL:** `https://limitations-between-authorities-outlet.trycloudflare.com`
+**Public URL:** `https://cupping-frisbee-bottom.ngrok-free.dev`
 
 The endpoint must expose:
 - `POST /predict`
