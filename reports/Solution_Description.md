@@ -1,27 +1,29 @@
-# EXACT 2026 Technical Solution Brief
-**Team:** AI WITH BRO | **System:** Open-source symbolic reasoning API for logic and physics QA
+# EXACT 2026 Technical Solution Description
+**Team:** AI WITH BRO | **System:** Local FastAPI service with sandboxed program execution and model orchestration
 
-> The core design choice is to treat each query as a constrained reasoning problem, not as free-form chat generation. The LLM proposes formal executable structure; Z3 or SymPy performs the decisive computation; the final explanation is grounded in the executed trace.
+> The system runs a local FastAPI service that maps educational queries to formal programs. Rather than relying on LLMs for direct calculation, the service serves as an orchestrator: language models generate code, an isolated sandbox executes it with Z3 and SymPy, and the final response schema is validated locally.
 
-## Architecture Positioning
-The submitted service exposes one FastAPI endpoint, `/predict`, for the unified EXACT 2026 test stream. The classifier first honors any explicit `task_type` or `query_type` field. If no explicit type is provided, it uses the official schema signal: non-empty `premises-NL` routes to Type 1 logic, while empty premises route to Type 2 physics. This keeps routing deterministic and avoids spending model budget on a task that can be inferred from the input contract.
+## Architecture and Routing
+The service exposes a unified `/predict` endpoint. To avoid latency overhead, the request payload is parsed deterministically without an LLM classifier. If the query contains a non-empty `premises-NL` field, the router forwards the state to the Type 1 logic pipeline. If empty, the query is routed to the Type 2 physics pipeline. Any explicit `task_type` or `query_type` metadata is honored as a priority routing override.
 
-## Reasoning Pipeline
-| Stage | Engineering role | Reliability control |
+## System Execution Pipeline
+| Stage | System Implementation | Engineering Control |
 |---|---|---|
-| Classifier | Selects logic or physics path without an LLM call. | Deterministic schema-based routing. |
-| Retrieval | For physics, optionally retrieves formulas and worked examples from a provisioned disclosed corpus. | Hybrid BM25/vector search with reranking; skipped immediately when no index is deployed. |
-| Formalizer | Generates Z3 code for logic or SymPy code for physics. | Self-hosted open-source coder model; no external LLM API. |
-| Solver | Executes the generated program and returns the symbolic/numeric result. | AST allowlist, isolated Python mode, CPU/memory/output limits, timeout, and one execution-feedback retry. |
-| Explainer | Converts the solver result into the official response schema. | Explanation is grounded in solver evidence; deterministic solver fallback preserves verified answers when the model is unavailable or the time budget is low. |
+| Routing | Parse request keys (`premises-NL`, `task_type`) | Deterministic fast routing. |
+| RAG | Retrieve reference equations and code templates | Local vector-rerank index; auto-skips on missing db. |
+| Generator | Code synthesis (Qwen2.5-Coder-7B) | Local inference server; structured templates. |
+| Sandbox | Subprocess script execution (Z3/SymPy) | AST constraint parsing, timeout daemon, isolated runtime. |
+| Explainer | Result explanation synthesis (Qwen2.5-7B) | Grounded context extraction; system prompt validation. |
 
-## Evaluation Alignment
-The system is optimized around the three scoring dimensions. For **P1 correctness**, answer selection is anchored to symbolic execution rather than unconstrained text. For **P2 explanation quality**, the response explains the applicable law, premise chain, or calculation path in natural language. For **P3 reasoning depth**, the API returns structured evidence fields: `fol`, `cot` as a concise derivation summary, `premises`, and calibrated `confidence`. The API sanitizer enforces valid output types, clamps confidence to `[0, 1]`, and guarantees non-empty mandatory `answer` and `explanation` fields.
+## Sandbox Security and Reliability
+The execution sandbox protects the host system and ensures output validation:
+- **AST Parsing:** Validates the compiled syntax tree of generated code. Restricts import modules strictly to `z3` and `sympy`, blocking standard runtime libraries (e.g., `os`, `sys`, `socket`).
+- **Resource Caps:** Limits memory usage to 256MB and locks execution time to a 20-second hard threshold.
+- **Auto-Retry Loop:** Catches execution tracebacks and passes them back to the generator for a single correction try.
+- **Budget Handler:** Tracks the global request duration. If elapsed time exceeds 58 seconds, it bypasses subsequent LLM nodes and serializes the raw sandbox trace to compile a compliant fallback response.
 
-## Models and Serving
-- **Qwen2.5-Coder-7B-Instruct, fine-tuned:** formal program generation for Z3 and SymPy.
-- **Qwen2.5-7B-Instruct, fine-tuned:** final structured explanation and JSON response generation.
-- Models are served locally through `llama.cpp` / `llama-server`. The HTTP interface is OpenAI-compatible only at the protocol level; it does not call OpenAI, GPT, Claude, Gemini, or any commercial model endpoint.
-
-## Data and Compliance
-All training, retrieval, and evaluation sources are disclosed in the Data Disclosure Document. The pipeline does not use closed-source LLMs for training data generation, preprocessing, retrieval, evaluation, or inference. If the internally digitized Electro textbook set cannot be accompanied by a complete bibliography, it must be excluded from training, RAG, and final submission artifacts.
+## Model Orchestration and Serving
+Local inference uses `llama.cpp` and `llama-server`. The custom `LlamaServerSupervisor` manages model transitions:
+- **Active Lock:** Ensures only one model runs in GPU memory to prevent VRAM allocation crashes.
+- **Auto-Unload:** Releases VRAM back to the system when the engine is idle.
+- **Protocol:** Exposes a self-hosted API compatible with standard SDK structures, running completely offline.

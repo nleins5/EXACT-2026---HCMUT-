@@ -1,149 +1,106 @@
-# EXACT-2026: Structured Neural-Symbolic Reasoning Engine for Logic and Quantitative Physics
+# EXACT-2026: Hybrid Neural-Symbolic Reasoning Engine
 
-This repository presents a production-grade Neural-Symbolic reasoning system designed for the EXACT 2026 Competition (IEEE IJCNN 2026). The system addresses two distinct classes of academic problems:
-- **Type 1 (Logic-Based Educational Queries):** First-order logic reasoning, inference, and validity checking from premises.
-- **Type 2 (Quantitative Physics Problems):** Numerical and symbolic physics solving requiring formula derivation and computation.
-
-Rather than relying on unconstrained text generation from large language models, this system separates code generation (neural program synthesis) from execution and reasoning verification (symbolic solving). It integrates local fine-tuned language models with formal mathematical/logical engines (Z3 SMT Solver and SymPy Computer Algebra System) using a deterministic state-transition graph built on LangGraph.
+This repository contains the local FastAPI implementation for the EXACT 2026 Competition. The system integrates local autoregressive model inference with isolated symbolic solvers (Z3 SMT and SymPy computer algebra) using a state-machine architecture managed by LangGraph.
 
 ---
 
-## Architectural Taxonomy
+## System Architecture
 
 ```
-                                 [Input Query]
-                                       │
-                         ┌─────────────┴─────────────┐
-                         │   Deterministic Router    │
-                         └─────────────┬─────────────┘
-                                       │
-                    ┌──────────────────┴──────────────────┐
-                    ▼ Task Classification                 ▼
-          [Type 1: Logic Query]                 [Type 2: Physics Query]
-                    │                                     │
-                    ▼                                     ▼
-          ┌──────────────────┐                  ┌──────────────────┐
-          │ logic_formalizer │                  │   physics_rag    │
-          │  (Program Gen)   │                  └─────────┬────────┘
-          └─────────┬────────┘                            │ Formula Retrieve
-                    │                                     ▼
-                    │                           ┌──────────────────┐
-                    │                           │physics_formalizer│
-                    │                           │  (Program Gen)   │
-                    │                           └─────────┬────────┘
-                    ▼                                     ▼
-          ┌──────────────────┐                  ┌──────────────────┐
-          │   logic_solver   │                  │  physics_solver  │
-          │   (Z3 Sandbox)   │                  │ (SymPy Sandbox)  │
-          └─────────┬────────┘                  └─────────┬────────┘
-                    │                                     │
-                    └──────────────────┬──────────────────┘
-                                       ▼ Symbolic Trace
-                            ┌─────────────────────┐
-                            │ logic/phys_explain  │
-                            │ (Response Synth)    │
-                            └──────────┬──────────┘
-                                       ▼ Output Schema
-                             [Verified API Output]
+                             [FastAPI Request]
+                                     │
+                             [Schema Router]
+                                     │
+                   ┌─────────────────┴─────────────────┐
+                   ▼                                   ▼
+         [Type 1: Logic Query]               [Type 2: Physics Query]
+                   │                                   │
+                   ▼                                   ▼
+          [Code Generator]                    [Local RAG Engine]
+                   │                                   │
+                   ▼                                   ▼
+            [Z3 Sandbox]                        [Code Generator]
+                   │                                   │
+                   ▼                                   ▼
+         [Explanation Node]                     [SymPy Sandbox]
+                   │                                   │
+                   ▼                                   ▼
+                   └─────────────────┬─────────────────┘
+                                     ▼
+                            [Schema Sanitizer]
+                                     │
+                             [JSON Response]
 ```
 
-### 1. Deterministic Router & Task Classification
-To eliminate the latency and accuracy overhead of LLM-based query classification, routing is performed deterministically based on the incoming schema payload. If `premises-NL` is populated, the query is routed to the **Type 1 Logic** pipeline. Otherwise, it is routed to the **Type 2 Physics** pipeline. Explicit metadata signals (`task_type`, `query_type`) are also honored immediately to ensure perfect alignment with evaluator test streams.
+### 1. Unified Router
+Incoming requests are parsed dynamically by FastAPI payload keys. The router uses the payload format to direct the state machine:
+- Presence of a non-empty `premises-NL` value forwards the state to the Type 1 logic pipeline.
+- Absence of `premises-NL` routes to the Type 2 physics pipeline.
+- Explicit query type overrides (`task_type`, `query_type`) bypass default classification rules.
 
-### 2. Neural Program Synthesis (Formalization)
-For each task type, a local, fine-tuned `Qwen2.5-Coder-7B-Instruct` model serves as a formalizer. Instead of solving the math or logic directly, the model is prompted to synthesize a complete Python script:
-- **Type 1:** Generates formal logical declarations using the Z3 SMT solver API to evaluate consistency (SAT/UNSAT) or entailment.
-- **Type 2:** Synthesizes symbolic math equations using SymPy to isolate target variables and perform unit conversions.
+### 2. Isolated Execution Sandbox
+Generated code scripts are run inside a sandboxed subprocess to safeguard the host operating system:
+- **AST Inspector:** Verifies the compiled Abstract Syntax Tree of the generated python code before execution, allowing only `z3` and `sympy` imports and blocking standard system libraries (e.g., `os`, `sys`, `subprocess`, `socket`).
+- **Resource Limitations:** Limits memory usage to 256MB per thread, locks runtime to a 20-second timeout, and restricts stdout output length.
+- **Traceback Recovery:** If the sandbox execution fails, the traceback logs are extracted and passed back to the generator for a single correction loop.
 
-### 3. Isolated Symbolic Sandbox (Solver)
-The generated Python code is written to disk and executed in a restricted subprocess environment. The execution loop enforces:
-- **Abstract Syntax Tree (AST) Inspection:** Rejects import statements outside of a strict allowlist (e.g., preventing access to `os`, `sys`, or network calls).
-- **Resource Constraints:** Enforces strict execution timeouts (20 seconds), memory allocation limits, and output length truncation.
-- **Execution Feedback Loop:** If execution fails with a runtime exception, the traceback is fed back to the formalizer node for a single self-correction attempt.
-
-### 4. Grounded Explanation Synthesis (Explainer)
-Once symbolic execution completes, the output trace (variable values, solver model assertions, and constraints) is extracted. A fine-tuned `Qwen2.5-7B-Instruct` model processes the trace alongside the original query. Its goal is to translate the symbolic solution back into a natural language explanation, guaranteeing that the final output is factually grounded in the execution trace.
-
----
-
-## Memory & Runtime Infrastructure
-
-### 1. Dynamic Server Orchestration (`LlamaServerSupervisor`)
-To execute the neural-symbolic pipeline on consumer-grade hardware with limited VRAM, the system implements a resident memory manager. The `LlamaServerSupervisor` manages instances of `llama-server` (from the `llama.cpp` project) and handles dynamic loading and unloading of model weights in GGUF format:
-- **Idle Timeout:** Automatically unloads models when inactive to free up system VRAM.
-- **Preemptive Swapping:** If the coder model is loaded and the pipeline requests an explanation, the supervisor unloads the coder, loads the instruct model, and routes the request.
-- **Concurrency Locks:** Prevents race conditions during model transition states.
-
-### 2. Physical Knowledge Retrieval (RAG)
-For quantitative physics problems, the system uses a hybrid retrieval pipeline combining BM25 and vector search (using local sentence-transformers) against a curated database of normalized physics formulas and solved examples.
-- **Dynamic Fallback:** If the index is not built or retrieval fails, the pipeline automatically skips the RAG step to prevent pipeline blocking.
-- **Data Compliance:** No external APIs or cloud models are used for vectorization or indexing.
-
-### 3. Hard Latency Budgeting
-The API enforces a strict budget control system. The absolute evaluator timeout is 60 seconds. The API monitors elapsed time at each node transition:
-- **Max Node Budget:** Total execution is capped at 58 seconds.
-- **Fallback Activation:** If the time remaining is insufficient to load the explanation model or run another inference, the pipeline immediately triggers a fast solver-fallback. This constructs a valid JSON response from the raw symbolic trace, avoiding evaluator timeouts.
+### 3. VRAM Supervisor (`LlamaServerSupervisor`)
+To execute inference locally on consumer GPUs, the system handles model weights dynamically:
+- Manages local `llama-server` process states.
+- Swaps Qwen2.5-Coder and Qwen2.5-Instruct GGUF files in and out of VRAM using file-locking threads to prevent out-of-memory crashes.
+- Unloads models to system memory when the service is idle.
 
 ---
 
-## Technical Specifications
+## Repository Structure
 
-### Project Structure
-- `config/` - YAML files for logging, system timeouts, and port allocations.
-- `data/` - Training data, formula databases, and processed evaluation datasets.
-- `fine_tune/` - Jupyter/Colab notebooks documenting the supervised fine-tuning configurations.
-- `models/` - Downloader script and storage directory for the GGUF model binaries.
-- `reports/` - Competition artifacts, technical solution summaries, and data disclosures.
-- `scripts/` - RAG index building, evaluation utilities, and PDF generation tools.
-- `src/` - Core source modules (LangGraph topology, sandboxed execution, server supervisors).
-- `tests/` - Active test suite containing 84 unit and integration tests.
-- `test_pipeline.py` - Integration validation script for end-to-end execution.
+- `config/` - YAML settings for timeouts, logger configs, and model port bindings.
+- `data/` - Training samples, extracted textbook sources, and validation datasets.
+- `fine_tune/` - Training configurations for Qwen model fine-tuning.
+- `models/` - Downloader script and local storage for GGUF model packages.
+- `reports/` - Submission documents, technical briefings, and package files.
+- `scripts/` - Ingestion, physics vector indexing, and PDF building scripts.
+- `src/` - Core FastAPI backend, LangGraph state nodes, sandbox environment, and supervisor code.
+- `tests/` - Active test suite (84 automated tests) verifying endpoints, sandbox parsing, and recovery logic.
+- `test_pipeline.py` - Integration script running sample requests through the local graph.
 
 ---
 
-## Getting Started
+## Deployment & Setup
 
-### 1. Virtual Environment & Package Installation
-Initialize a clean Python virtual environment and install all packages:
+### 1. Environment Configuration
+Build a Python 3.10+ virtual environment and install dependencies:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Model Weight Retrieval
-Acquire the custom fine-tuned model files (in quantized GGUF format):
+### 2. Fetch Model Binaries
+Retrieve the GGUF model files:
 ```bash
 cd models
 python3 download_models.py
 cd ..
 ```
 
-### 3. Server Engine Assembly
-Download or compile the `llama-server` binary for your target architecture from the official `llama.cpp` releases and place it inside:
+### 3. Compiling the Inference Engine
+Download or compile the `llama-server` binary for your environment and place it under:
 `bin/llama-cpp/llama-server`
 
-### 4. Build Knowledge Index
-Compile the physics formula reference index:
+### 4. Build Local Retrieval Indexes
+Compile the local formulas retrieval index:
 ```bash
 python3 -m scripts.rag.build_physics_index
 ```
 
-### 5. Verification
-Run the unit test suite to verify module configurations and sandbox safety constraints:
+### 5. Running the Test Suite
+Verify endpoint schemas, sandbox security restrictions, and node transitions:
 ```bash
 python3 -m pytest
 ```
 
-Execute an end-to-end run through the entire LangGraph pipeline:
+Test end-to-end question processing:
 ```bash
 python3 test_pipeline.py
 ```
-
----
-
-## Competition Alignment
-
-- **P1 Correctness:** Answer extraction is anchored to mathematical output from SymPy or logical consistency checks from Z3, removing model hallucination.
-- **P2 Explanation Quality:** Explanations map the logical premise chain or outline the formulas and steps utilized in computation.
-- **P3 Reasoning Depth:** The output returns structured chains of thought (`cot`), formalizations (`fol`), extracted premises, and confidence estimates calibrated against solver success.
