@@ -19,6 +19,9 @@ def physics_explanation_node(state: AgentState) -> dict:
     intermediate = state.get("intermediate_answer", {})
     code_error = intermediate.get("code_error", False)
 
+    if not code_error:
+        return physics_solver_fallback(state, "")
+
     if remaining_seconds() < settings.api.min_explanation_seconds:
         logger.warning("Skipping physics explanation model because the request budget is low.")
         return physics_solver_fallback(state, "Explanation model skipped due to request budget.")

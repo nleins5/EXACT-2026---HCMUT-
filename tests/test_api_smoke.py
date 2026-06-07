@@ -67,6 +67,35 @@ def test_predict_timeout_cancels_background_pipeline(monkeypatch):
     assert predict_route._predict_gate.locked() is False
 
 
+def test_unknown_logic_answer_keeps_reasoning_evidence(monkeypatch):
+    monkeypatch.setattr(settings.api, "warmup_role", None)
+
+    def fake_pipeline(question, premises, **kwargs):
+        return {
+            "answer": "Unknown",
+            "explanation": "Neither conclusion can be derived.",
+            "fol": "P(x)",
+            "cot": ["Checked the conclusion.", "Checked its negation."],
+            "premises": premises,
+            "confidence": 0.5,
+            "code_error": False,
+            "error_message": "",
+        }
+
+    monkeypatch.setattr(predict_route, "run_pipeline", fake_pipeline)
+
+    with TestClient(app) as client:
+        prediction = client.post(
+            "/predict",
+            json={"question": "Is A true?", "premises-NL": ["A may be true."]},
+        )
+
+    assert prediction.status_code == 200
+    assert prediction.json()["answer"] == "Unknown"
+    assert prediction.json()["fol"] == "P(x)"
+    assert prediction.json()["cot"]
+
+
 def test_models_endpoint_reports_unreachable_runtime(monkeypatch):
     monkeypatch.setattr(settings.api, "warmup_role", None)
     monkeypatch.setattr(models_route, "_cached_response", None)

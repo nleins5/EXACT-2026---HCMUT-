@@ -8,7 +8,7 @@ Bat ke nhanh nao deu goi LLM dung 1 lan -> dam bao timing 60s.
 """
 from src.agent.state import AgentState
 from src.agent.schema import ExactResponse
-from src.agent.nodes.fallbacks import logic_solver_fallback
+from src.agent.nodes.fallbacks import logic_solver_fallback, normalize_logic_answer
 from src.agent.prompts.logic_explanation import (
     LOGIC_OUTPUT_PROMPT,
     LOGIC_OUTPUT_ERROR_PROMPT,
@@ -23,6 +23,9 @@ def logic_explanation_node(state: AgentState) -> dict:
     """Sinh ExactResponse JSON tu code_output (success) hoac code (error)."""
     intermediate = state.get("intermediate_answer", {})
     code_error = intermediate.get("code_error", False)
+
+    if not code_error:
+        return logic_solver_fallback(state, "")
 
     if remaining_seconds() < settings.api.min_explanation_seconds:
         logger.warning("Skipping logic explanation model because the request budget is low.")
@@ -56,7 +59,7 @@ def logic_explanation_node(state: AgentState) -> dict:
         response: ExactResponse = structured_llm.invoke(prompt)
         final_answer = response.model_dump()
         if not code_error:
-            verified_answer = parse_z3_output(intermediate.get("code_output", ""))
+            verified_answer = normalize_logic_answer(parse_z3_output(intermediate.get("code_output", "")))
             if verified_answer != "Unknown":
                 final_answer["answer"] = verified_answer
                 final_answer["confidence"] = max(

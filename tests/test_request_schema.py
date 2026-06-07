@@ -29,9 +29,18 @@ def test_premises_string_is_normalized():
 def test_task_1_official_payload_is_normalized():
     request = PredictRequest.model_validate(
         {
-            "questions": "Are cats mammals?",
-            "premise-NL": "All cats are mammals.",
+            "question": "Are cats mammals?",
+            "premises-NL": "All cats are mammals.",
         }
+    )
+
+    assert request.question == "Are cats mammals?"
+    assert request.premises_nl == ["All cats are mammals."]
+
+
+def test_legacy_task_1_aliases_are_normalized():
+    request = PredictRequest.model_validate(
+        {"questions": "Are cats mammals?", "premise-NL": "All cats are mammals."}
     )
 
     assert request.question == "Are cats mammals?"

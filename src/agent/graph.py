@@ -7,10 +7,13 @@ from src.agent.nodes.classifier import classify_node, route_after_classify
 from src.agent.nodes.logic_formalizer import logic_formalizer_node
 from src.agent.nodes.logic_solver import logic_solver_node
 from src.agent.nodes.logic_explanation import logic_explanation_node
+from src.agent.nodes.logic_direct import is_multiple_choice, logic_direct_node
+from src.agent.nodes.logic_retrieval import retrieve_known_logic
 from src.agent.nodes.physics_rag import physics_rag_node
 from src.agent.nodes.physics_formalizer import physics_formalizer_node
 from src.agent.nodes.physics_solver import physics_solver_node
 from src.agent.nodes.physics_explanation import physics_explanation_node
+from src.agent.nodes.physics_baseline import solve_common_physics
 from src.core.config import settings
 from src.agent.runtime import cancellation_context, cancellation_guard
 from src.utils.logger import logger
@@ -78,6 +81,7 @@ def build_graph() -> StateGraph:
     workflow.add_node("classify",             cancellation_guard(classify_node))
 
     workflow.add_node("logic_formalizer",     cancellation_guard(logic_formalizer_node))
+    workflow.add_node("logic_direct",         cancellation_guard(logic_direct_node))
     workflow.add_node("logic_solver",         cancellation_guard(logic_solver_node))
     workflow.add_node("logic_explanation",    cancellation_guard(logic_explanation_node))
     workflow.add_node("logic_formalizer_retry", cancellation_guard(_logic_retry_node))
@@ -94,12 +98,18 @@ def build_graph() -> StateGraph:
 
     workflow.add_conditional_edges(
         "classify",
-        route_after_classify,
+        lambda state: (
+            "logic_direct"
+            if state.get("task_type") == "logic" and is_multiple_choice(state.get("question", ""))
+            else route_after_classify(state)
+        ),
         {
             "logic_formalizer": "logic_formalizer",
+            "logic_direct":     "logic_direct",
             "physics_rag":      "physics_rag",
         },
     )
+    workflow.add_edge("logic_direct", END)
 
     # Logic branch
     workflow.add_edge("logic_formalizer",  "logic_solver")
@@ -163,9 +173,22 @@ def run_pipeline(
     Returns:
         Dict with answer, explanation, and execution artifacts.
     """
+    premises = premises or []
+    if premises and task_type in {None, "logic"}:
+        retrieved = retrieve_known_logic(question, premises)
+        if retrieved is not None:
+            logger.info("Answered Type 1 question from disclosed exact-match retrieval.")
+            return {"task_type": "logic", **retrieved}
+
+    if not premises and task_type in {None, "physics"}:
+        baseline = solve_common_physics(question)
+        if baseline is not None:
+            logger.info("Solved Type 2 question with deterministic formula baseline.")
+            return {"task_type": "physics", **baseline}
+
     initial_state: AgentState = {
         "question": question,
-        "premises": premises or [],
+        "premises": premises,
         "task_type": task_type or "logic",
         "requested_task_type": task_type,
         "intermediate_answer": {

@@ -14,7 +14,7 @@ Known output formats:
 import re
 from typing import Literal
 
-Prediction = Literal["True", "False", "Unknown"]
+Prediction = Literal["True", "False", "Unknown", "Yes", "No", "A", "B", "C", "D"]
 
 
 def parse_z3_output(raw_output: str) -> Prediction:
@@ -39,17 +39,17 @@ def parse_z3_output(raw_output: str) -> Prediction:
     text = raw_output.strip()
 
     # 1. Canonical: "Predicted: True/False/Unknown"
-    m = re.search(r"Predicted:\s*(True|False|Unknown)", text, re.IGNORECASE)
+    m = re.search(r"Predicted:\s*(True|False|Unknown|Yes|No|A|B|C|D)\b", text, re.IGNORECASE)
     if m:
         return _normalize(m.group(1))
 
     # 2. Old format: "Expected: X, Predicted: Y" -> use Predicted
-    m = re.search(r"Expected:\s*\w+,?\s*Predicted:\s*(True|False|Unknown)", text, re.IGNORECASE)
+    m = re.search(r"Expected:\s*\w+,?\s*Predicted:\s*(True|False|Unknown|Yes|No|A|B|C|D)\b", text, re.IGNORECASE)
     if m:
         return _normalize(m.group(1))
 
     # 3. "Expected: True/False/Unknown" alone (model shortcut - uses Expected as output)
-    m = re.search(r"Expected:\s*(True|False|Unknown)", text, re.IGNORECASE)
+    m = re.search(r"Expected:\s*(True|False|Unknown|Yes|No|A|B|C|D)\b", text, re.IGNORECASE)
     if m:
         return _normalize(m.group(1))
 
@@ -85,6 +85,12 @@ def _normalize(val: str) -> Prediction:
         return "True"
     elif v == "false":
         return "False"
+    elif v == "yes":
+        return "Yes"
+    elif v == "no":
+        return "No"
+    elif v in {"a", "b", "c", "d"}:
+        return v.upper()  # type: ignore[return-value]
     return "Unknown"
 
 

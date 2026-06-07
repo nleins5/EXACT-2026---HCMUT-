@@ -60,7 +60,7 @@ def _as_confidence(value: Any) -> float:
 def _sanitize_response(result: dict) -> PredictResponse:
     answer = _as_text(result.get("answer"), default="Unknown")
 
-    if answer.lower() in {"error", "unknown", ""}:
+    if answer.lower() in {"error", ""}:
         if result.get("error_message"):
             logger.warning("Returning fallback — internal: %s", result["error_message"])
         return fallback_response()

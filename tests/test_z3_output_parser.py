@@ -31,6 +31,13 @@ class TestCanonicalPredicted:
     def test_predicted_with_whitespace(self):
         assert parse_z3_output("  Predicted:   True  ") == "True"
 
+    def test_predicted_mcq_letter(self):
+        assert parse_z3_output("Predicted: B") == "B"
+
+    def test_predicted_yes_no(self):
+        assert parse_z3_output("Predicted: Yes") == "Yes"
+        assert parse_z3_output("Predicted: No") == "No"
+
 
 # ── Strategy 2: "Expected: X, Predicted: Y" → use Predicted ────────
 

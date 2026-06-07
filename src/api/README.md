@@ -53,8 +53,8 @@ Dựa trên format chính thức, BTC gửi hai payload khác nhau. API chuẩn 
 Task 1:
 ```json
 {
-  "questions": "Nội dung câu hỏi logic",
-  "premise-NL": "Giả thiết logic"
+  "question": "Nội dung câu hỏi logic",
+  "premises-NL": ["Giả thiết logic 1", "Giả thiết logic 2"]
 }
 ```
 
@@ -65,7 +65,7 @@ Task 2:
 }
 ```
 
-Để tương thích ngược, API cũng chấp nhận `question` cho Task 1, `premises-NL`, và các field chỉ định loại bài như `task_type`, `query_type`, `problem_type`, `type`, `task-type`, `query-type`. Nếu không có field chỉ định, classifier route dựa trên premise: có premise → logic, không có premise → physics.
+Để tương thích ngược, API cũng chấp nhận alias `questions` và `premise-NL`, cùng các field chỉ định loại bài như `task_type`, `query_type`, `problem_type`, `type`, `task-type`, `query-type`. Nếu không có field chỉ định, classifier route dựa trên premises: có premises → logic, không có premises → physics.
 
 **Response Body (JSON):**
 Theo Slide 33, `answer` và `explanation` là bắt buộc. Các field còn lại là tùy chọn nhưng được khuyến khích để lấy điểm Reasoning Depth (P3). (Định nghĩa trong `schemas/response.py`).

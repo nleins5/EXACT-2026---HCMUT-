@@ -91,6 +91,11 @@ def escape(text: str) -> str:
 
 def inline_markup(text: str) -> str:
     text = escape(text.strip())
+    text = re.sub(
+        r"\[([^\]]+)\]\((https?://[^)]+)\)",
+        r'<link href="\2" color="#1d4ed8">\1</link>',
+        text,
+    )
     text = re.sub(r"`([^`]+)`", r'<font name="Courier">\1</font>', text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
     return text

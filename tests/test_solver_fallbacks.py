@@ -18,8 +18,20 @@ def _state(code_output: str, *, code_error: bool = False):
 
 def test_logic_fallback_preserves_z3_prediction():
     result = logic_solver_fallback(_state("Predicted: True"), "model unavailable")
-    assert result["final_answer"]["answer"] == "True"
+    assert result["final_answer"]["answer"] == "Yes"
     assert result["final_answer"]["confidence"] > 0
+
+
+def test_logic_fallback_preserves_unknown_reasoning_evidence():
+    result = logic_solver_fallback(_state("Predicted: Unknown"), "model unavailable")
+    assert result["final_answer"]["answer"] == "Unknown"
+    assert result["final_answer"]["cot"]
+    assert result["final_answer"]["premises"]
+
+
+def test_logic_fallback_preserves_mcq_letter():
+    result = logic_solver_fallback(_state("Predicted: C"), "model unavailable")
+    assert result["final_answer"]["answer"] == "C"
 
 
 def test_physics_fallback_extracts_final_answer():
