@@ -11,7 +11,8 @@ def test_solves_official_capacitor_energy_sample():
     )
 
     assert result is not None
-    assert result["answer"] == "0.045 J"
+    assert result["answer"] == "0.045"
+    assert result["unit"] == "J"
     assert result["confidence"] == 0.99
 
 
@@ -22,7 +23,8 @@ def test_solves_parallel_resistance_sample():
     )
 
     assert result is not None
-    assert result["answer"] == "20 Ohm"
+    assert result["answer"] == "20"
+    assert result["unit"] == "Ohm"
 
 
 def test_does_not_guess_unknown_formula_family():
@@ -35,7 +37,7 @@ def test_solves_coulomb_force_with_unit_conversion():
     )
 
     assert result is not None
-    assert result["answer"].endswith(" N")
+    assert result["unit"] == "N"
 
 
 def test_solves_electric_field():
@@ -44,7 +46,7 @@ def test_solves_electric_field():
     )
 
     assert result is not None
-    assert result["answer"].endswith(" N/C")
+    assert result["unit"] == "N/C"
 
 
 def test_pipeline_uses_baseline_before_loading_graph(monkeypatch):
@@ -57,7 +59,8 @@ def test_pipeline_uses_baseline_before_loading_graph(monkeypatch):
         "Calculate the energy stored in capacitor C when C = 100 μF and U = 30 V."
     )
 
-    assert result["answer"] == "0.045 J"
+    assert result["answer"] == "0.045"
+    assert result["unit"] == "J"
 
 
 def test_detects_logic_multiple_choice_question():

@@ -60,6 +60,8 @@ def _load_indexes() -> tuple[dict[tuple[str, tuple[str, ...]], dict], dict[str, 
                             for index in index_sets[question_index]
                             if isinstance(index, int) and 1 <= index <= len(all_premises)
                         ]
+                    # Build 0-based indices for premises_used
+                    used_indices = list(range(len(selected)))
                     result = {
                         "answer": answer,
                         "explanation": explanation or "Matched a released EXACT Type 1 example.",
@@ -69,6 +71,8 @@ def _load_indexes() -> tuple[dict[tuple[str, tuple[str, ...]], dict], dict[str, 
                             f"Retrieved the disclosed reference answer: {answer}.",
                         ],
                         "premises": selected,
+                        "premises_used": used_indices,
+                        "unit": "",
                         "confidence": 1.0,
                         "code": "",
                         "code_output": f"RETRIEVED_ANSWER: {answer}",

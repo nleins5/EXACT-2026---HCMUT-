@@ -123,20 +123,23 @@ def _result(
     formula: str,
     substitutions: str,
 ) -> dict:
-    formatted = f"{_format_number(answer)} {unit}".strip()
+    formatted_value = _format_number(answer)
+    formatted_full = f"{formatted_value} {unit}".strip()
     return {
-        "answer": formatted,
-        "explanation": f"Applied {formula}. Substituting {substitutions} gives {formatted}.",
+        "answer": formatted_value,
+        "unit": unit,
+        "explanation": f"Applied {formula}. Substituting {substitutions} gives {formatted_full}.",
         "fol": "",
         "cot": [
             f"Identify the required relation: {formula}.",
             f"Convert all quantities to SI units: {substitutions}.",
-            f"Compute the verified result: {formatted}.",
+            f"Compute the verified result: {formatted_full}.",
         ],
         "premises": [formula],
+        "premises_used": [],
         "confidence": 0.99,
         "code": "",
-        "code_output": f"FINAL_ANSWER: {formatted}",
+        "code_output": f"FINAL_ANSWER: {formatted_full}",
         "code_error": False,
         "error_message": "",
         "retry_count": 0,

@@ -56,6 +56,8 @@ Return ONLY the single correct option letter: A, B, C, or D. No explanation or p
                     f"Selected option {answer}: {option_text}",
                 ],
                 "premises": premises,
+                "premises_used": list(range(len(premises))),
+                "unit": "",
                 "confidence": 0.75,
             }
         }
@@ -68,6 +70,8 @@ Return ONLY the single correct option letter: A, B, C, or D. No explanation or p
                 "fol": "",
                 "cot": ["Compared the answer options against the supplied premises."],
                 "premises": premises,
+                "premises_used": list(range(len(premises))),
+                "unit": "",
                 "confidence": 0.0,
             },
             "error": str(exc),

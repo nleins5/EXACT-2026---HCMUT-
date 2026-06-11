@@ -1,0 +1,7 @@
+# EXACT 2026 — AI WITH BRO — Endpoint URLs
+
+# Prediction endpoint (POST)
+https://cupping-frisbee-bottom.ngrok-free.dev/predict
+
+# Model info endpoint (GET) — served by FastAPI proxy to llama-server
+https://cupping-frisbee-bottom.ngrok-free.dev/v1/models

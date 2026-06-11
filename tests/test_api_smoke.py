@@ -20,6 +20,8 @@ def test_health_and_predict_contract(monkeypatch):
             "fol": "",
             "cot": ["Predicted: True"],
             "premises": premises,
+            "premises_used": [0],
+            "unit": "",
             "confidence": 0.9,
             "code_error": False,
             "error_message": "",
@@ -32,8 +34,11 @@ def test_health_and_predict_contract(monkeypatch):
         prediction = client.post(
             "/predict",
             json={
-                "questions": "Is A true?",
-                "premise-NL": ["A"],
+                "query_id": "T1_TEST",
+                "type": "type1",
+                "query": "Is A true?",
+                "premises": ["A"],
+                "options": [],
             },
         )
 
@@ -41,7 +46,10 @@ def test_health_and_predict_contract(monkeypatch):
     assert health.json()["status"] == "degraded"
     assert health.json()["ready"] is False
     assert prediction.status_code == 200
-    assert prediction.json()["answer"] == "True"
+    result = prediction.json()
+    assert isinstance(result, list)
+    assert result[0]["answer"] == "True"
+    assert result[0]["query_id"] == "T1_TEST"
 
 
 def test_predict_timeout_cancels_background_pipeline(monkeypatch):
@@ -63,7 +71,9 @@ def test_predict_timeout_cancels_background_pipeline(monkeypatch):
 
     assert elapsed < 1.5
     assert prediction.status_code == 200
-    assert prediction.json()["answer"] == "Unknown"
+    result = prediction.json()
+    assert isinstance(result, list)
+    assert result[0]["answer"] == "Unknown"
     assert predict_route._predict_gate.locked() is False
 
 
@@ -77,6 +87,8 @@ def test_unknown_logic_answer_keeps_reasoning_evidence(monkeypatch):
             "fol": "P(x)",
             "cot": ["Checked the conclusion.", "Checked its negation."],
             "premises": premises,
+            "premises_used": [0],
+            "unit": "",
             "confidence": 0.5,
             "code_error": False,
             "error_message": "",
@@ -87,13 +99,21 @@ def test_unknown_logic_answer_keeps_reasoning_evidence(monkeypatch):
     with TestClient(app) as client:
         prediction = client.post(
             "/predict",
-            json={"question": "Is A true?", "premises-NL": ["A may be true."]},
+            json={
+                "query_id": "T1_UNK",
+                "type": "type1",
+                "query": "Is A true?",
+                "premises": ["A may be true."],
+                "options": [],
+            },
         )
 
     assert prediction.status_code == 200
-    assert prediction.json()["answer"] == "Unknown"
-    assert prediction.json()["fol"] == "P(x)"
-    assert prediction.json()["cot"]
+    result = prediction.json()
+    assert isinstance(result, list)
+    assert result[0]["answer"] == "Unknown"
+    assert result[0]["reasoning"] is not None
+    assert result[0]["reasoning"]["steps"]
 
 
 def test_models_endpoint_reports_unreachable_runtime(monkeypatch):

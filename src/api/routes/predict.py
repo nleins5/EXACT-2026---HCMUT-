@@ -7,11 +7,12 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from src.agent.graph import run_pipeline
 from src.agent.llm.factory import LLMFactory
 from src.api.schemas.request import PredictRequest
-from src.api.schemas.response import PredictResponse, fallback_response
+from src.api.schemas.response import PredictResult, ReasoningBlock, fallback_response
 from src.core.config import settings
 from src.utils.logger import logger
 
@@ -38,70 +39,157 @@ def _as_text(value: Any, default: str = "") -> str:
     return str(value).strip() or default
 
 
-def _as_text_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        text = value.strip()
-        return [text] if text else []
-    if isinstance(value, (list, tuple, set)):
-        return [_as_text(item) for item in value if _as_text(item)]
-    return [_as_text(value)] if _as_text(value) else []
+def _constrain_answer_to_options(answer: str, options: list[str]) -> str:
+    """If options are provided, force answer to match one of them exactly."""
+    if not options:
+        return answer
+
+    # Exact match
+    for opt in options:
+        if answer.strip().lower() == opt.strip().lower():
+            return opt  # Return canonical casing from options
+
+    # Partial / fuzzy: check if answer contains an option
+    answer_lower = answer.strip().lower()
+    for opt in options:
+        if opt.strip().lower() in answer_lower:
+            return opt
+
+    # Default to first option if no match found (fallback)
+    logger.warning(
+        "Answer '%s' did not match any option %s, defaulting to '%s'",
+        answer, options, options[0],
+    )
+    return options[0]
 
 
-def _as_confidence(value: Any) -> float:
-    try:
-        confidence = float(value)
-    except (TypeError, ValueError):
-        confidence = 0.0
-    return min(1.0, max(0.0, confidence))
+def _extract_premises_used(result: dict, num_premises: int) -> list[int]:
+    """Extract premises_used as 0-based indices from pipeline result."""
+    raw = result.get("premises_used")
+
+    # If the pipeline already returns int indices, use them
+    if isinstance(raw, list) and all(isinstance(i, int) for i in raw):
+        return [i for i in raw if 0 <= i < num_premises]
+
+    # Legacy: premises field contains text — try to match to indices
+    premises_text = result.get("premises")
+    if isinstance(premises_text, list) and premises_text:
+        # If they look like indices already (strings of digits)
+        indices = []
+        for item in premises_text:
+            if isinstance(item, int):
+                indices.append(item)
+            elif isinstance(item, str) and item.strip().isdigit():
+                indices.append(int(item.strip()))
+        if indices:
+            return [i for i in indices if 0 <= i < num_premises]
+
+    # Fallback for Type 1: if we have premises, assume all were used
+    if num_premises > 0 and result.get("task_type") == "logic":
+        return list(range(num_premises))
+
+    return []
 
 
-def _sanitize_response(result: dict) -> PredictResponse:
+def _extract_unit(result: dict) -> str:
+    """Extract unit for Type 2 responses."""
+    unit = result.get("unit")
+    if isinstance(unit, str) and unit.strip():
+        return unit.strip()
+    return ""
+
+
+def _build_reasoning(result: dict) -> ReasoningBlock | None:
+    """Build the reasoning object from pipeline artifacts."""
+    fol = _as_text(result.get("fol"))
+    cot = result.get("cot")
+    steps = []
+    reasoning_type = "cot"
+
+    if fol:
+        reasoning_type = "fol"
+        steps.append(fol)
+
+    if isinstance(cot, list):
+        steps.extend([_as_text(s) for s in cot if _as_text(s)])
+    elif isinstance(cot, str) and cot.strip():
+        steps.append(cot.strip())
+
+    if not steps:
+        return None
+
+    return ReasoningBlock(type=reasoning_type, steps=steps)
+
+
+def _sanitize_response(
+    result: dict,
+    query_id: str,
+    options: list[str],
+    num_premises: int,
+    task_type_hint: str | None,
+) -> PredictResult:
     answer = _as_text(result.get("answer"), default="Unknown")
 
     if answer.lower() in {"error", ""}:
         if result.get("error_message"):
             logger.warning("Returning fallback — internal: %s", result["error_message"])
-        return fallback_response()
+        return fallback_response(query_id)
 
-    confidence = _as_confidence(result.get("confidence"))
     explanation = _as_text(result.get("explanation"))
-
-    if result.get("code_error"):
-        confidence = min(confidence, 0.4)
-        logger.info("Solver errored but explanation recovered answer=%s", answer)
-
     if not explanation:
         explanation = "The system returned an answer but did not provide a detailed explanation."
-        confidence = min(confidence, 0.3)
 
-    return PredictResponse(
+    # Constrain answer to options if provided
+    if options:
+        answer = _constrain_answer_to_options(answer, options)
+
+    # Determine effective task type
+    effective_type = result.get("task_type") or task_type_hint
+
+    # Extract unit (Type 2 only)
+    unit = ""
+    if effective_type == "physics":
+        unit = _extract_unit(result)
+
+    # Extract premises_used (Type 1 only)
+    premises_used: list[int] = []
+    if effective_type == "logic":
+        premises_used = _extract_premises_used(result, num_premises)
+
+    # Build reasoning block
+    reasoning = _build_reasoning(result)
+
+    return PredictResult(
+        query_id=query_id,
         answer=answer,
+        unit=unit,
         explanation=explanation,
-        fol=_as_text(result.get("fol")),
-        cot=_as_text_list(result.get("cot")),
-        premises=_as_text_list(result.get("premises")),
-        confidence=confidence,
+        premises_used=premises_used,
+        reasoning=reasoning,
     )
 
 
-@router.post("/predict", response_model=PredictResponse)
+@router.post("/predict")
 async def predict_endpoint(
     payload: PredictRequest,
     request: Request,
-) -> PredictResponse:
+) -> JSONResponse:
+    """EXACT 2026 prediction endpoint. Returns a JSON list per the Submission Guide."""
     started_at = time.monotonic()
     timeout = _request_timeout()
     cancellation_grace = max(0.5, float(settings.api.cancellation_grace_seconds))
     work_deadline = started_at + max(1.0, timeout - cancellation_grace)
     hard_deadline = started_at + timeout
-    question_preview = payload.question[:120].replace("\n", " ")
+
+    question_text = payload.question
+    question_preview = question_text[:120].replace("\n", " ")
 
     logger.info(
-        "POST /predict task_type=%s premises=%s timeout=%ss question=%s",
+        "POST /predict query_id=%s task_type=%s premises=%s options=%s timeout=%ss question=%s",
+        payload.query_id,
         payload.task_type or "auto",
         len(payload.premises_nl),
+        len(payload.options),
         timeout,
         question_preview,
     )
@@ -121,9 +209,10 @@ async def predict_endpoint(
         task = asyncio.create_task(
             asyncio.to_thread(
                 run_pipeline,
-                payload.question,
+                question_text,
                 payload.premises_nl,
                 task_type=payload.task_type,
+                options=payload.options,
                 cancel_event=cancel_event,
                 deadline=work_deadline,
             )
@@ -132,14 +221,21 @@ async def predict_endpoint(
             asyncio.shield(task),
             timeout=max(0.1, work_deadline - time.monotonic()),
         )
-        response = _sanitize_response(result)
-        logger.info(
-            "POST /predict completed in %.3fs answer=%s confidence=%.3f",
-            time.monotonic() - started_at,
-            response.answer,
-            response.confidence,
+        response = _sanitize_response(
+            result,
+            query_id=payload.query_id,
+            options=payload.options,
+            num_premises=len(payload.premises_nl),
+            task_type_hint=payload.task_type,
         )
-        return response
+        logger.info(
+            "POST /predict completed in %.3fs query_id=%s answer=%s",
+            time.monotonic() - started_at,
+            payload.query_id,
+            response.answer,
+        )
+        # Return as a JSON list per the Submission Guide §4
+        return JSONResponse(content=[response.model_dump()])
     except asyncio.TimeoutError:
         logger.warning("POST /predict exhausted its %.3fs request budget.", timeout)
         cancel_event.set()
@@ -175,10 +271,12 @@ async def predict_endpoint(
 
                 task.add_done_callback(release_after_pipeline)
 
-        return fallback_response()
+        fb = fallback_response(payload.query_id)
+        return JSONResponse(content=[fb.model_dump()])
     except Exception as exc:
         logger.exception("POST /predict failed: %s", exc)
-        return fallback_response()
+        fb = fallback_response(payload.query_id)
+        return JSONResponse(content=[fb.model_dump()])
     finally:
         if gate_acquired and release_gate and _predict_gate.locked():
             _predict_gate.release()

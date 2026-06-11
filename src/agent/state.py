@@ -1,12 +1,15 @@
 from typing import Literal, NotRequired, TypedDict
 
+
 class FinalAnswer(TypedDict):
     answer: str
     explanation: str
-    fol: str             # Optional
-    cot: list[str]       # Optional
-    premises: list[str]  # Optional
-    confidence: float    # Optional
+    fol: str             # Optional — used to build reasoning block
+    cot: list[str]       # Optional — used to build reasoning block
+    premises: list[str]  # Optional legacy — text of used premises
+    premises_used: list[int]  # 0-based indices of premises actually used
+    unit: str            # ASCII unit for Type 2; empty for Type 1
+    confidence: float    # Optional internal metric
 
 
 class IntermediateAnswer(TypedDict):
@@ -26,6 +29,7 @@ class AgentState(TypedDict):
 
     question: str
     premises: list[str]
+    options: list[str]            # Choice set from evaluation server
     collection_name: str
 
     task_type: Literal["logic", "physics"]

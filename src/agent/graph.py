@@ -158,6 +158,7 @@ def run_pipeline(
     premises: list[str] = None,
     collection_name: str = "logic_regulations",
     task_type: Literal["logic", "physics"] | None = None,
+    options: list[str] | None = None,
     cancel_event=None,
     deadline: float | None = None,
 ) -> dict:
@@ -186,9 +187,11 @@ def run_pipeline(
             logger.info("Solved Type 2 question with deterministic formula baseline.")
             return {"task_type": "physics", **baseline}
 
+    options = options or []
     initial_state: AgentState = {
         "question": question,
         "premises": premises,
+        "options": options,
         "task_type": task_type or "logic",
         "requested_task_type": task_type,
         "intermediate_answer": {
@@ -208,6 +211,8 @@ def run_pipeline(
             "fol": "",
             "cot": [],
             "premises": [],
+            "premises_used": [],
+            "unit": "",
             "confidence": 0.0,
         },
         "error": "",
@@ -227,16 +232,18 @@ def run_pipeline(
     intermediate = result.get("intermediate_answer", {})
 
     return {
-        "task_type":    result.get("task_type"),
-        "answer":       final.get("answer"),
-        "explanation":  final.get("explanation"),
-        "fol":          final.get("fol"),
-        "cot":          final.get("cot"),
-        "premises":     final.get("premises"),
-        "confidence":   final.get("confidence"),
-        "code":         intermediate.get("generated_code"),
-        "code_output":  intermediate.get("code_output"),
-        "code_error":   intermediate.get("code_error", False),
-        "error_message": intermediate.get("error_message", ""),
-        "retry_count":  result.get("retry_count", 0),
+        "task_type":      result.get("task_type"),
+        "answer":         final.get("answer"),
+        "explanation":    final.get("explanation"),
+        "fol":            final.get("fol"),
+        "cot":            final.get("cot"),
+        "premises":       final.get("premises"),
+        "premises_used":  final.get("premises_used", []),
+        "unit":           final.get("unit", ""),
+        "confidence":     final.get("confidence"),
+        "code":           intermediate.get("generated_code"),
+        "code_output":    intermediate.get("code_output"),
+        "code_error":     intermediate.get("code_error", False),
+        "error_message":  intermediate.get("error_message", ""),
+        "retry_count":    result.get("retry_count", 0),
     }

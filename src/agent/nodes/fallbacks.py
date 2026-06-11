@@ -20,7 +20,7 @@ def normalize_logic_answer(answer: str) -> str:
         "yes": "Yes",
         "no": "No",
         "unknown": "Unknown",
-        "uncertain": "Unknown",
+        "uncertain": "Uncertain",
     }
     return aliases.get(normalized.lower(), normalized.upper() if normalized.upper() in {"A", "B", "C", "D"} else normalized)
 
@@ -61,6 +61,8 @@ def logic_solver_fallback(state: AgentState, reason: str) -> dict:
                 code_output,
             ] if code_output else [],
             "premises": premises,
+            "premises_used": list(range(len(premises))),
+            "unit": "",
             "confidence": confidence,
         },
         "error": reason,
@@ -82,6 +84,14 @@ def physics_solver_fallback(state: AgentState, reason: str) -> dict:
         confidence = 0.85
 
     steps = [line.strip() for line in code_output.splitlines() if line.strip()]
+    unit = ""
+    if answer != "Unknown":
+        # Try to extract unit from answer (e.g. "5 A" -> answer="5", unit="A")
+        parts = answer.strip().split()
+        if len(parts) >= 2 and parts[-1].isalpha():
+            unit = parts[-1]
+            answer = " ".join(parts[:-1])
+
     return {
         "final_answer": {
             "answer": answer,
@@ -89,6 +99,8 @@ def physics_solver_fallback(state: AgentState, reason: str) -> dict:
             "fol": "",
             "cot": steps[-6:],
             "premises": [],
+            "premises_used": [],
+            "unit": unit,
             "confidence": confidence,
         },
         "error": reason,

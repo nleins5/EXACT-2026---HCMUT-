@@ -39,7 +39,8 @@ def test_physics_fallback_extracts_final_answer():
         _state("R_eq = 20 Ohm\nFINAL_ANSWER: 20.0 Ohm"),
         "model unavailable",
     )
-    assert result["final_answer"]["answer"] == "20.0 Ohm"
+    assert result["final_answer"]["answer"] == "20.0"
+    assert result["final_answer"]["unit"] == "Ohm"
     assert result["final_answer"]["cot"]
 
 
