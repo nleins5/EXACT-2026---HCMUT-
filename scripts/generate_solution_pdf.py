@@ -35,34 +35,36 @@ pdf.add_page()
 # 1. Datasets
 pdf.section("1. Datasets Used")
 
-pdf.set_font("Helvetica", "B", 9)
-pdf.cell(55, 5, "Dataset", border=1)
-pdf.cell(55, 5, "Source", border=1)
-pdf.cell(25, 5, "Samples", border=1)
-pdf.cell(55, 5, "Sample Entry", border=1, new_x="LMARGIN", new_y="NEXT")
+# Column widths: Dataset=45, Source=50, Samples=22, Sample Entry=73 (total=190)
+COL_W = [45, 50, 22, 73]
+
+pdf.set_font("Helvetica", "B", 8)
+headers = ["Dataset", "Source", "Samples", "Sample Entry"]
+for i, h in enumerate(headers):
+    pdf.cell(COL_W[i], 6, h, border=1, align="C")
+pdf.ln()
 
 rows = [
     ("EXACT Type 1 (Logic)", "Official EXACT 2026 release", "808 Qs",
      "Q: Which conclusion follows...? A: A"),
     ("EXACT Type 2 (Physics)", "Official EXACT 2026 release", "7351 Qs",
      "Q: Calculate energy in capacitor... A: 0.045 J"),
-    ("Physics RAG Corpus", "Self-curated from Type 2 + textbook formulas", "~500 entries",
-     "Ohm's law: V = IR, Coulomb: F = kq1q2/r^2"),
+    ("Physics RAG Corpus", "Self-curated from Type 2\n+ textbook formulas", "~500",
+     "Ohm's law: V = IR\nCoulomb: F = kq1q2/r^2"),
 ]
 
+ROW_H = 10  # uniform height for all rows
 pdf.set_font("Helvetica", "", 8)
-for name, source, count, sample in rows:
-    y0 = pdf.get_y()
-    pdf.multi_cell(55, 4, name, border=1, new_x="RIGHT", new_y="TOP", max_line_height=4)
-    pdf.set_y(y0)
-    pdf.set_x(65)
-    pdf.multi_cell(55, 4, source, border=1, new_x="RIGHT", new_y="TOP", max_line_height=4)
-    pdf.set_y(y0)
-    pdf.set_x(120)
-    pdf.multi_cell(25, 4, count, border=1, new_x="RIGHT", new_y="TOP", max_line_height=4)
-    pdf.set_y(y0)
-    pdf.set_x(145)
-    pdf.multi_cell(55, 4, sample, border=1, new_x="LMARGIN", new_y="NEXT", max_line_height=4)
+for cells in rows:
+    x0, y0 = pdf.get_x(), pdf.get_y()
+    for i, text in enumerate(cells):
+        pdf.set_xy(x0 + sum(COL_W[:i]), y0)
+        pdf.multi_cell(COL_W[i], ROW_H / max(1, text.count("\n") + 1), text,
+                        border=0, align="L")
+    # Draw cell borders at uniform height
+    for i in range(len(cells)):
+        pdf.rect(x0 + sum(COL_W[:i]), y0, COL_W[i], ROW_H)
+    pdf.set_xy(x0, y0 + ROW_H)
 
 pdf.ln(2)
 
