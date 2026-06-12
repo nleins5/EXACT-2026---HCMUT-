@@ -40,8 +40,17 @@ def test_physics_fallback_extracts_final_answer():
         "model unavailable",
     )
     assert result["final_answer"]["answer"] == "20.0"
-    assert result["final_answer"]["unit"] == "Ohm"
+    assert result["final_answer"]["unit"] == "ohm"
     assert result["final_answer"]["cot"]
+
+
+def test_physics_fallback_extracts_compound_ascii_unit():
+    result = physics_solver_fallback(
+        _state("FINAL_ANSWER: 5 N/C"),
+        "model unavailable",
+    )
+    assert result["final_answer"]["answer"] == "5"
+    assert result["final_answer"]["unit"] == "N/C"
 
 
 def test_extract_physics_answer_returns_none_without_marker():

@@ -12,6 +12,20 @@ def extract_physics_answer(code_output: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def split_physics_answer_unit(answer: str) -> tuple[str, str]:
+    match = re.fullmatch(
+        r"\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)"
+        r"\s+([A-Za-z][A-Za-z0-9/*^._-]*)\s*",
+        answer,
+    )
+    if not match:
+        return answer, ""
+    value, unit = match.groups()
+    if unit.lower() == "ohm":
+        unit = "ohm"
+    return value, unit
+
+
 def normalize_logic_answer(answer: str) -> str:
     normalized = str(answer).strip()
     aliases = {
@@ -86,11 +100,7 @@ def physics_solver_fallback(state: AgentState, reason: str) -> dict:
     steps = [line.strip() for line in code_output.splitlines() if line.strip()]
     unit = ""
     if answer != "Unknown":
-        # Try to extract unit from answer (e.g. "5 A" -> answer="5", unit="A")
-        parts = answer.strip().split()
-        if len(parts) >= 2 and parts[-1].isalpha():
-            unit = parts[-1]
-            answer = " ".join(parts[:-1])
+        answer, unit = split_physics_answer_unit(answer)
 
     return {
         "final_answer": {

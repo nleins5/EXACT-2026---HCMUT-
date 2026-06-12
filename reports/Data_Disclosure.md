@@ -12,7 +12,7 @@
 ## Generated Artifacts And Runtime Retrieval
 - Fine-tuning outputs contain 1,546 coder samples and 2,798 instruct samples. Scripts and aggregate statistics are included in the repository.
 - No closed-source model generated synthetic data, and no larger teacher-model distillation was used.
-- No external RAG corpus or persisted vector database is active. Runtime retrieval is limited to transparent exact-match lookup over the disclosed released Type 1 corpus; unseen questions continue through the reasoning pipeline.
+- No external RAG corpus or persisted vector database is active. Runtime retrieval is limited to transparent exact full-input matching over the disclosed released Type 1 corpus; unseen inputs continue through the reasoning pipeline.
 - Runtime inference does not call proprietary LLM APIs or third-party inference providers. Z3, SymPy, deterministic formula rules, and the two self-hosted Qwen models are used.
 
 ## Controls

@@ -1,6 +1,6 @@
 """Tests for deterministic Type 2 formula coverage."""
 from src.agent.nodes.physics_baseline import solve_common_physics
-from src.agent.nodes.logic_direct import is_multiple_choice
+from src.agent.nodes.logic_direct import is_multiple_choice, should_use_logic_direct
 from src.agent.nodes.logic_retrieval import retrieve_known_logic
 from src.agent.graph import run_pipeline
 
@@ -24,7 +24,49 @@ def test_solves_parallel_resistance_sample():
 
     assert result is not None
     assert result["answer"] == "20"
-    assert result["unit"] == "Ohm"
+    assert result["unit"] == "ohm"
+
+
+def test_solves_official_total_current_parallel_sample():
+    result = solve_common_physics(
+        "Two resistors R1 = 4 ohm and R2 = 6 ohm are in parallel across a "
+        "12V battery. Find the total current."
+    )
+
+    assert result is not None
+    assert result["answer"] == "5"
+    assert result["unit"] == "A"
+
+
+def test_parallel_branch_current_uses_the_named_branch_resistance():
+    result = solve_common_physics(
+        "Two resistors R1 = 4 ohm and R2 = 6 ohm are in parallel across a "
+        "12V battery. Find the current through R1."
+    )
+
+    assert result is not None
+    assert result["answer"] == "3"
+    assert result["unit"] == "A"
+
+
+def test_parses_kiloohm_symbol_prefix():
+    result = solve_common_physics(
+        "What is the current through a 1 kΩ resistor connected to 10 V?"
+    )
+
+    assert result is not None
+    assert result["answer"] == "0.01"
+    assert result["unit"] == "A"
+
+
+def test_parallel_short_circuit_does_not_crash():
+    result = solve_common_physics(
+        "What is the equivalent resistance of 0 ohm and 10 ohm in parallel?"
+    )
+
+    assert result is not None
+    assert result["answer"] == "0"
+    assert result["unit"] == "ohm"
 
 
 def test_does_not_guess_unknown_formula_family():
@@ -66,6 +108,12 @@ def test_pipeline_uses_baseline_before_loading_graph(monkeypatch):
 def test_detects_logic_multiple_choice_question():
     assert is_multiple_choice("Question\nA. One\nB. Two\nC. Three\nD. Four")
     assert not is_multiple_choice("Is the conclusion true?")
+    assert should_use_logic_direct("How many credits are still required?", [])
+    assert should_use_logic_direct("Choose one", ["red", "blue"])
+    assert not should_use_logic_direct(
+        "Is the conclusion true?",
+        ["Yes", "No", "Uncertain"],
+    )
 
 
 def test_retrieves_released_logic_example():
@@ -86,3 +134,34 @@ def test_retrieves_released_logic_example():
 
 def test_does_not_retrieve_unseen_logic_question():
     assert retrieve_known_logic("An unseen logic question?", ["An unseen premise."]) is None
+
+
+def test_retrieval_requires_matching_premises_and_preserves_original_indices():
+    import json
+    from pathlib import Path
+
+    dataset = (
+        Path("data/EXACT2026_dataset_2026-05-15")
+        / "Logic_Based_Educational_Queries_Text_Only"
+        / "Logic_Based_Educational_Queries.json"
+    )
+    records = json.loads(dataset.read_text(encoding="utf-8"))
+    record = next(
+        item
+        for item in records
+        if item.get("idx")
+        and any(indices and indices != list(range(1, len(indices) + 1)) for indices in item["idx"])
+    )
+    question_index = next(
+        index
+        for index, indices in enumerate(record["idx"])
+        if indices and indices != list(range(1, len(indices) + 1))
+    )
+    expected = [index - 1 for index in record["idx"][question_index]]
+    question = record["questions"][question_index]
+
+    result = retrieve_known_logic(question, record["premises-NL"])
+
+    assert result is not None
+    assert result["premises_used"] == expected
+    assert retrieve_known_logic(question, ["Completely unrelated premise."]) is None

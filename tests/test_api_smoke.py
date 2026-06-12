@@ -116,6 +116,79 @@ def test_unknown_logic_answer_keeps_reasoning_evidence(monkeypatch):
     assert result[0]["reasoning"]["steps"]
 
 
+def test_unknown_logic_answer_maps_to_uncertain_option(monkeypatch):
+    monkeypatch.setattr(settings.api, "warmup_role", None)
+    monkeypatch.setattr(
+        predict_route,
+        "run_pipeline",
+        lambda *args, **kwargs: {
+            "task_type": "logic",
+            "answer": "Unknown",
+            "explanation": "Neither conclusion can be derived.",
+            "premises_used": [0],
+        },
+    )
+
+    with TestClient(app) as client:
+        prediction = client.post(
+            "/predict",
+            json={
+                "query_id": "T1_UNCERTAIN",
+                "type": "type1",
+                "query": "Can the conclusion be determined?",
+                "premises": ["A may be true."],
+                "options": ["Yes", "No", "Uncertain"],
+            },
+        )
+
+    assert prediction.json()[0]["answer"] == "Uncertain"
+
+
+def test_explicit_choice_marker_does_not_match_letters_inside_words():
+    assert predict_route._constrain_answer_to_options(
+        "Answer: C",
+        ["A", "B", "C", "D"],
+    ) == "C"
+    assert predict_route._constrain_answer_to_options(
+        "The answer is D",
+        ["A", "B", "C", "D"],
+    ) == "D"
+
+
+def test_choice_fallback_still_returns_a_valid_option():
+    payload = predict_route.PredictRequest.model_validate(
+        {
+            "query_id": "T1_FALLBACK",
+            "type": "type1",
+            "query": "Can this be determined?",
+            "premises": ["A may be true."],
+            "options": ["Yes", "No", "Uncertain"],
+        }
+    )
+
+    result = predict_route._fallback_for_request(payload)
+
+    assert result.answer == "Uncertain"
+    assert result.query_id == "T1_FALLBACK"
+
+
+def test_empty_logic_premises_used_falls_back_to_all_input_indices():
+    result = predict_route._sanitize_response(
+        {
+            "task_type": "logic",
+            "answer": "Yes",
+            "explanation": "Verified.",
+            "premises_used": [],
+        },
+        query_id="T1_PREMISES",
+        options=[],
+        num_premises=3,
+        task_type_hint="logic",
+    )
+
+    assert result.premises_used == [0, 1, 2]
+
+
 def test_models_endpoint_reports_unreachable_runtime(monkeypatch):
     monkeypatch.setattr(settings.api, "warmup_role", None)
     monkeypatch.setattr(models_route, "_cached_response", None)
@@ -142,7 +215,7 @@ def test_models_endpoint_reports_unreachable_runtime(monkeypatch):
     assert len(response.json()["data"]) == 2
 
 
-def test_models_endpoint_discloses_both_configured_models(monkeypatch):
+def test_models_endpoint_proxies_the_active_runtime_model(monkeypatch):
     monkeypatch.setattr(settings.api, "warmup_role", None)
     monkeypatch.setattr(models_route, "_cached_response", None)
 
@@ -173,5 +246,4 @@ def test_models_endpoint_discloses_both_configured_models(monkeypatch):
 
     payload = response.json()
     assert response.status_code == 200
-    assert len(payload["data"]) == 2
-    assert payload["exact_runtime"]["reachable"] is True
+    assert payload == {"object": "list", "data": [{"id": "active-model"}]}

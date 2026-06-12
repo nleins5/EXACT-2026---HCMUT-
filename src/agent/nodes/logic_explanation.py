@@ -58,6 +58,9 @@ def logic_explanation_node(state: AgentState) -> dict:
 
         response: ExactResponse = structured_llm.invoke(prompt)
         final_answer = response.model_dump()
+        premises = list(state.get("premises", []) or [])
+        final_answer["premises_used"] = list(range(len(premises)))
+        final_answer["unit"] = ""
         if not code_error:
             verified_answer = normalize_logic_answer(parse_z3_output(intermediate.get("code_output", "")))
             if verified_answer != "Unknown":

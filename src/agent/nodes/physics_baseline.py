@@ -98,7 +98,7 @@ def _quantities(question: str) -> list[Quantity]:
         prefix = match.group(2) or ""
         raw_unit = match.group(3)
         unit, multiplier = _canonical_unit(raw_unit)
-        if prefix and raw_unit.lower() in {"f", "v", "a", "c"}:
+        if prefix and raw_unit.lower() in {"f", "v", "a", "c", "ω", "ohm", "ohms"}:
             multiplier *= _PREFIXES.get(prefix, 1.0)
         found.append(Quantity(value * multiplier, unit))
     return found
@@ -124,10 +124,11 @@ def _result(
     substitutions: str,
 ) -> dict:
     formatted_value = _format_number(answer)
-    formatted_full = f"{formatted_value} {unit}".strip()
+    output_unit = "ohm" if unit == "Ohm" else unit
+    formatted_full = f"{formatted_value} {output_unit}".strip()
     return {
         "answer": formatted_value,
-        "unit": unit,
+        "unit": output_unit,
         "explanation": f"Applied {formula}. Substituting {substitutions} gives {formatted_full}.",
         "fol": "",
         "cot": [
@@ -144,6 +145,18 @@ def _result(
         "error_message": "",
         "retry_count": 0,
     }
+
+
+def _equivalent_resistance(resistances: list[float], connection: str) -> float | None:
+    if not resistances:
+        return None
+    if connection == "series":
+        return sum(resistances)
+    if connection == "parallel":
+        if any(resistance == 0 for resistance in resistances):
+            return 0.0
+        return 1.0 / sum(1.0 / resistance for resistance in resistances)
+    return None
 
 
 def solve_common_physics(question: str) -> dict | None:
@@ -169,7 +182,7 @@ def solve_common_physics(question: str) -> dict | None:
 
     if ("equivalent resistance" in text or "resistance equivalent" in text) and resistances:
         if "parallel" in text and len(resistances) >= 2:
-            answer = 1.0 / sum(1.0 / resistance for resistance in resistances)
+            answer = _equivalent_resistance(resistances, "parallel")
             return _result(
                 answer=answer,
                 unit="Ohm",
@@ -177,7 +190,7 @@ def solve_common_physics(question: str) -> dict | None:
                 substitutions=f"R_i={resistances} Ohm",
             )
         if "series" in text and len(resistances) >= 2:
-            answer = sum(resistances)
+            answer = _equivalent_resistance(resistances, "series")
             return _result(
                 answer=answer,
                 unit="Ohm",
@@ -195,12 +208,33 @@ def solve_common_physics(question: str) -> dict | None:
         )
 
     if ("current" in text or "amperage" in text) and voltages and resistances:
-        voltage, resistance = voltages[0], resistances[0]
+        voltage = voltages[0]
+        resistance = resistances[0]
+        connection = ""
+        if len(resistances) >= 2:
+            total_current_requested = any(
+                phrase in text
+                for phrase in (
+                    "total current",
+                    "source current",
+                    "circuit current",
+                    "current supplied",
+                    "current drawn",
+                )
+            )
+            if "parallel" in text and total_current_requested:
+                connection = "parallel"
+            elif "series" in text:
+                connection = "series"
+        if connection:
+            resistance = _equivalent_resistance(resistances, connection)
+        if resistance == 0:
+            return None
         return _result(
             answer=voltage / resistance,
             unit="A",
             formula="I = V / R",
-            substitutions=f"V={voltage:g} V and R={resistance:g} Ohm",
+            substitutions=f"V={voltage:g} V and R_eq={resistance:g} ohm",
         )
 
     if "voltage" in text and currents and resistances:
@@ -214,6 +248,8 @@ def solve_common_physics(question: str) -> dict | None:
 
     if "resistance" in text and voltages and currents and not resistances:
         voltage, current = voltages[0], currents[0]
+        if current == 0:
+            return None
         return _result(
             answer=voltage / current,
             unit="Ohm",
@@ -232,6 +268,8 @@ def solve_common_physics(question: str) -> dict | None:
 
     if ("power" in text or "watt" in text) and voltages and resistances:
         voltage, resistance = voltages[0], resistances[0]
+        if resistance == 0:
+            return None
         return _result(
             answer=voltage**2 / resistance,
             unit="W",
@@ -250,6 +288,8 @@ def solve_common_physics(question: str) -> dict | None:
 
     if "capacitance" in text and charges and voltages and not capacitances:
         charge, voltage = charges[0], voltages[0]
+        if voltage == 0:
+            return None
         return _result(
             answer=charge / voltage,
             unit="F",
@@ -260,6 +300,8 @@ def solve_common_physics(question: str) -> dict | None:
     coulomb_constant = 8.9875517923e9
     if "force" in text and len(charges) >= 2 and distances:
         q1, q2, distance = charges[0], charges[1], distances[0]
+        if distance == 0:
+            return None
         return _result(
             answer=coulomb_constant * abs(q1 * q2) / distance**2,
             unit="N",
@@ -269,6 +311,8 @@ def solve_common_physics(question: str) -> dict | None:
 
     if "electric field" in text and charges and distances:
         charge, distance = charges[0], distances[0]
+        if distance == 0:
+            return None
         return _result(
             answer=coulomb_constant * abs(charge) / distance**2,
             unit="N/C",
@@ -278,6 +322,8 @@ def solve_common_physics(question: str) -> dict | None:
 
     if "electric potential" in text and charges and distances:
         charge, distance = charges[0], distances[0]
+        if distance == 0:
+            return None
         return _result(
             answer=coulomb_constant * charge / distance,
             unit="V",

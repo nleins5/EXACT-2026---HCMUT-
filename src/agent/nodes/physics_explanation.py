@@ -4,7 +4,11 @@ Tuong tu logic_explanation: 2 nhanh prompt theo `code_error`.
 """
 from src.agent.state import AgentState
 from src.agent.schema import ExactResponse
-from src.agent.nodes.fallbacks import extract_physics_answer, physics_solver_fallback
+from src.agent.nodes.fallbacks import (
+    extract_physics_answer,
+    physics_solver_fallback,
+    split_physics_answer_unit,
+)
 from src.agent.prompts.physics_explanation import (
     PHYSICS_OUTPUT_PROMPT,
     PHYSICS_OUTPUT_ERROR_PROMPT,
@@ -53,10 +57,16 @@ def physics_explanation_node(state: AgentState) -> dict:
 
         response: ExactResponse = structured_llm.invoke(prompt)
         final_answer = response.model_dump()
+        final_answer["answer"], final_answer["unit"] = split_physics_answer_unit(
+            str(final_answer.get("answer") or "Unknown")
+        )
+        final_answer["premises_used"] = []
         if not code_error:
             verified_answer = extract_physics_answer(intermediate.get("code_output", ""))
             if verified_answer:
-                final_answer["answer"] = verified_answer
+                final_answer["answer"], final_answer["unit"] = split_physics_answer_unit(
+                    verified_answer
+                )
                 final_answer["confidence"] = max(
                     float(final_answer.get("confidence") or 0.0),
                     0.8,

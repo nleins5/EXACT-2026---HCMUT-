@@ -54,15 +54,19 @@ def _load_indexes() -> tuple[dict[tuple[str, tuple[str, ...]], dict], dict[str, 
                         else ""
                     )
                     selected = all_premises
+                    original_used_indices = list(range(len(all_premises)))
                     if question_index < len(index_sets) and index_sets[question_index]:
-                        selected = [
-                            all_premises[index - 1]
+                        original_used_indices = [
+                            index - 1
                             for index in index_sets[question_index]
                             if isinstance(index, int) and 1 <= index <= len(all_premises)
                         ]
-                    # Build 0-based indices for premises_used
-                    used_indices = list(range(len(selected)))
-                    result = {
+                        selected = [
+                            all_premises[index]
+                            for index in original_used_indices
+                        ]
+
+                    base_result = {
                         "answer": answer,
                         "explanation": explanation or "Matched a released EXACT Type 1 example.",
                         "fol": "",
@@ -70,8 +74,6 @@ def _load_indexes() -> tuple[dict[tuple[str, tuple[str, ...]], dict], dict[str, 
                             "Matched the normalized question and premises against the released EXACT Type 1 corpus.",
                             f"Retrieved the disclosed reference answer: {answer}.",
                         ],
-                        "premises": selected,
-                        "premises_used": used_indices,
                         "unit": "",
                         "confidence": 1.0,
                         "code": "",
@@ -81,9 +83,19 @@ def _load_indexes() -> tuple[dict[tuple[str, tuple[str, ...]], dict], dict[str, 
                         "retry_count": 0,
                     }
                     question_key = _normalize(question)
-                    full[(question_key, _premise_key(selected))] = result
-                    full[(question_key, _premise_key(all_premises))] = result
-                    by_question_candidates.setdefault(question_key, []).append(result)
+                    selected_result = {
+                        **base_result,
+                        "premises": selected,
+                        "premises_used": list(range(len(selected))),
+                    }
+                    all_result = {
+                        **base_result,
+                        "premises": selected,
+                        "premises_used": original_used_indices,
+                    }
+                    full[(question_key, _premise_key(selected))] = selected_result
+                    full[(question_key, _premise_key(all_premises))] = all_result
+                    by_question_candidates.setdefault(question_key, []).append(all_result)
 
         unique_questions = {
             question: candidates[0]
@@ -97,9 +109,7 @@ def _load_indexes() -> tuple[dict[tuple[str, tuple[str, ...]], dict], dict[str, 
 
 def retrieve_known_logic(question: str, premises: list[str]) -> dict | None:
     """Return a disclosed released-example answer only on an exact normalized match."""
-    full, unique_questions = _load_indexes()
+    full, _ = _load_indexes()
     question_key = _normalize(question)
     result = full.get((question_key, _premise_key(premises)))
-    if result is None:
-        result = unique_questions.get(question_key)
     return dict(result) if result is not None else None

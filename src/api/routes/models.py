@@ -72,12 +72,15 @@ async def models_endpoint() -> Response:
                 ),
             )
 
-        payload = _configured_models_payload()
-        payload["exact_runtime"]["reachable"] = True
         try:
-            payload["exact_runtime"]["upstream"] = response.json()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("upstream /models returned a non-object payload")
         except ValueError:
-            payload["exact_runtime"]["upstream"] = {"raw": response.text[:1000]}
+            return JSONResponse(
+                status_code=503,
+                content=_configured_models_payload("llama-server returned invalid JSON"),
+            )
 
         encoded = json.dumps(payload).encode("utf-8")
         with _cache_lock:

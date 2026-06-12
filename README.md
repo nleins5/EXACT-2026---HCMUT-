@@ -33,10 +33,10 @@ This repository contains the local FastAPI implementation for the EXACT 2026 Com
 ```
 
 ### 1. Unified Router
-Incoming requests are parsed dynamically by FastAPI payload keys. The router uses the payload format to direct the state machine:
-- Task 1 payloads use `question` plus a non-empty `premises-NL` list and route to the logic pipeline.
-- Task 2 payloads use `question` without `premises-NL` and route to the physics pipeline.
-- Explicit query type overrides (`task_type`, `query_type`) bypass default classification rules.
+Incoming requests follow the official unified payload: `query_id`, `type`, `query`, `premises`, and `options`.
+- `type1` routes to the logic pipeline and returns 0-based `premises_used`.
+- `type2` routes to the physics pipeline and returns a numeric `answer` plus ASCII `unit`.
+- Legacy aliases remain accepted for local compatibility.
 
 ### 2. Isolated Execution Sandbox
 Generated code scripts are run inside a sandboxed subprocess to safeguard the host operating system:
@@ -88,16 +88,22 @@ cd ..
 Download or compile the `llama-server` binary for your environment and place it under:
 `bin/llama-cpp/llama-server`
 
-### 4. Build Local Retrieval Indexes
-Compile the local formulas retrieval index:
+### 4. Optional Local Retrieval Index
+No Physics vector index is shipped or active by default. To build one from a fully disclosed verified corpus:
 ```bash
-python3 -m scripts.rag.build_physics_index
+python3 -m scripts.rag.build_physics_index --input data/distilled/physics_kb.verified.jsonl --rebuild
 ```
 
 ### 5. Running the Test Suite
 Verify endpoint schemas, sandbox security restrictions, and node transitions:
 ```bash
 python3 -m pytest
+```
+
+Rebuild the final submission archive:
+```bash
+python3 scripts/generate_solution_pdf.py
+python3 scripts/build_submission_package.py
 ```
 
 Test end-to-end question processing:

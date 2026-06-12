@@ -48,40 +48,34 @@ src/api/
 Nhận request chứa câu hỏi từ hệ thống chấm điểm BTC và trả về kết quả. (Nên code trong `routes/predict.py`).
 
 **Request Body (JSON):**
-Dựa trên format chính thức, BTC gửi hai payload khác nhau. API chuẩn hóa cả hai về một schema nội bộ.
-
-Task 1:
+BTC gửi một unified schema cho cả hai loại bài:
 ```json
 {
-  "question": "Nội dung câu hỏi logic",
-  "premises-NL": ["Giả thiết logic 1", "Giả thiết logic 2"]
+  "query_id": "T1_0001",
+  "type": "type1",
+  "query": "Is Student A eligible?",
+  "premises": ["A student with >= 120 credits is eligible.", "Student A has 118 credits."],
+  "options": ["Yes", "No", "Uncertain"]
 }
 ```
 
-Task 2:
-```json
-{
-  "question": "Nội dung câu hỏi vật lý"
-}
-```
-
-Để tương thích ngược, API cũng chấp nhận alias `questions` và `premise-NL`, cùng các field chỉ định loại bài như `task_type`, `query_type`, `problem_type`, `type`, `task-type`, `query-type`. Nếu không có field chỉ định, classifier route dựa trên premises: có premises → logic, không có premises → physics.
+Type 2 dùng cùng schema với `type: "type2"`, còn `premises` và `options` là `[]`.
+Để tương thích ngược, API vẫn chấp nhận `question`, `questions`, `premises-NL`, và `premise-NL`.
 
 **Response Body (JSON):**
 Theo Slide 33, `answer` và `explanation` là bắt buộc. Các field còn lại là tùy chọn nhưng được khuyến khích để lấy điểm Reasoning Depth (P3). (Định nghĩa trong `schemas/response.py`).
 
 ```json
-{
-  "answer": "Yes/No/Unknown hoặc đáp án số kèm unit (vd: 20.0 Ω)",
-  "explanation": "Giải thích chi tiết bằng ngôn ngữ tự nhiên",
-  "fol": "First-Order Logic derivation (nếu có, cho Type 1)",
-  "cot": [
-    "Bước 1: Tính điện trở tương đương...",
-    "Bước 2: Áp dụng định luật Ohm..."
-  ],
-  "premises": ["Ohm's law: V = IR"],
-  "confidence": 0.95
-}
+[
+  {
+    "query_id": "T1_0001",
+    "answer": "No",
+    "unit": "",
+    "explanation": "Student A is below the required threshold.",
+    "premises_used": [0, 1],
+    "reasoning": {"type": "fol", "steps": ["118 < 120", "not Eligible(StudentA)"]}
+  }
+]
 ```
 
 ### 3.2. `GET /health` (Endpoint Monitor)
@@ -127,14 +121,16 @@ HTTP không thể swap model đồng thời.
 **Mẫu Fallback Response:**
 
 ```json
-{
-  "answer": "Unknown",
-  "explanation": "Hệ thống gặp lỗi nội bộ hoặc quá thời gian xử lý 60s (Timeout).",
-  "fol": "",
-  "cot": [],
-  "premises": [],
-  "confidence": 0.0
-}
+[
+  {
+    "query_id": "T1_0001",
+    "answer": "Unknown",
+    "unit": "",
+    "explanation": "The system could not determine a definitive answer for this query.",
+    "premises_used": [],
+    "reasoning": null
+  }
+]
 ```
 
 ---

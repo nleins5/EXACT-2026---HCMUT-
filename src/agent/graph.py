@@ -7,7 +7,7 @@ from src.agent.nodes.classifier import classify_node, route_after_classify
 from src.agent.nodes.logic_formalizer import logic_formalizer_node
 from src.agent.nodes.logic_solver import logic_solver_node
 from src.agent.nodes.logic_explanation import logic_explanation_node
-from src.agent.nodes.logic_direct import is_multiple_choice, logic_direct_node
+from src.agent.nodes.logic_direct import logic_direct_node, should_use_logic_direct
 from src.agent.nodes.logic_retrieval import retrieve_known_logic
 from src.agent.nodes.physics_rag import physics_rag_node
 from src.agent.nodes.physics_formalizer import physics_formalizer_node
@@ -100,7 +100,11 @@ def build_graph() -> StateGraph:
         "classify",
         lambda state: (
             "logic_direct"
-            if state.get("task_type") == "logic" and is_multiple_choice(state.get("question", ""))
+            if state.get("task_type") == "logic"
+            and should_use_logic_direct(
+                state.get("question", ""),
+                state.get("options", []),
+            )
             else route_after_classify(state)
         ),
         {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import threading
 import time
 from typing import Any
@@ -44,20 +45,43 @@ def _constrain_answer_to_options(answer: str, options: list[str]) -> str:
     if not options:
         return answer
 
-    # Exact match
-    for opt in options:
-        if answer.strip().lower() == opt.strip().lower():
-            return opt  # Return canonical casing from options
+    normalized_answer = answer.strip().casefold()
+    aliases = {
+        "true": "yes",
+        "false": "no",
+        "unknown": "uncertain",
+        "undetermined": "uncertain",
+        "cannot be determined": "uncertain",
+    }
+    normalized_answer = aliases.get(normalized_answer, normalized_answer)
 
-    # Partial / fuzzy: check if answer contains an option
-    answer_lower = answer.strip().lower()
     for opt in options:
-        if opt.strip().lower() in answer_lower:
+        normalized_option = opt.strip().casefold()
+        if aliases.get(normalized_option, normalized_option) == normalized_answer:
             return opt
 
-    # Default to first option if no match found (fallback)
+    # Accept an explicit option marker, but never use substring matching for
+    # single-letter options ("answer" contains both A and D).
+    marker = re.search(
+        r"\b(?:answer|option|choice)\s*(?:is|:|-)?\s*([A-D])\b",
+        answer,
+        re.IGNORECASE,
+    )
+    if marker:
+        selected = marker.group(1).casefold()
+        for opt in options:
+            if opt.strip().casefold() == selected:
+                return opt
+
+    # Keep the response contract valid without silently changing an uncertain
+    # result into "Yes" or "No".
+    if normalized_answer in {"unknown", "uncertain"}:
+        for opt in options:
+            if opt.strip().casefold() in {"unknown", "uncertain"}:
+                return opt
+
     logger.warning(
-        "Answer '%s' did not match any option %s, defaulting to '%s'",
+        "Answer '%s' did not match any option %s; returning the first option as a last resort.",
         answer, options, options[0],
     )
     return options[0]
@@ -68,7 +92,7 @@ def _extract_premises_used(result: dict, num_premises: int) -> list[int]:
     raw = result.get("premises_used")
 
     # If the pipeline already returns int indices, use them
-    if isinstance(raw, list) and all(isinstance(i, int) for i in raw):
+    if isinstance(raw, list) and raw and all(isinstance(i, int) for i in raw):
         return [i for i in raw if 0 <= i < num_premises]
 
     # Legacy: premises field contains text — try to match to indices
@@ -95,7 +119,8 @@ def _extract_unit(result: dict) -> str:
     """Extract unit for Type 2 responses."""
     unit = result.get("unit")
     if isinstance(unit, str) and unit.strip():
-        return unit.strip()
+        normalized = unit.strip()
+        return "ohm" if normalized.casefold() == "ohm" else normalized
     return ""
 
 
@@ -133,11 +158,15 @@ def _sanitize_response(
     if answer.lower() in {"error", ""}:
         if result.get("error_message"):
             logger.warning("Returning fallback — internal: %s", result["error_message"])
-        return fallback_response(query_id)
+        answer = "Unknown"
 
     explanation = _as_text(result.get("explanation"))
     if not explanation:
-        explanation = "The system returned an answer but did not provide a detailed explanation."
+        explanation = (
+            fallback_response(query_id).explanation
+            if answer == "Unknown"
+            else "The system returned an answer but did not provide a detailed explanation."
+        )
 
     # Constrain answer to options if provided
     if options:
@@ -166,6 +195,20 @@ def _sanitize_response(
         explanation=explanation,
         premises_used=premises_used,
         reasoning=reasoning,
+    )
+
+
+def _fallback_for_request(payload: PredictRequest) -> PredictResult:
+    return _sanitize_response(
+        {
+            "task_type": payload.task_type,
+            "answer": "Unknown",
+            "explanation": fallback_response(payload.query_id).explanation,
+        },
+        query_id=payload.query_id,
+        options=payload.options,
+        num_premises=len(payload.premises_nl),
+        task_type_hint=payload.task_type,
     )
 
 
@@ -271,11 +314,11 @@ async def predict_endpoint(
 
                 task.add_done_callback(release_after_pipeline)
 
-        fb = fallback_response(payload.query_id)
+        fb = _fallback_for_request(payload)
         return JSONResponse(content=[fb.model_dump()])
     except Exception as exc:
         logger.exception("POST /predict failed: %s", exc)
-        fb = fallback_response(payload.query_id)
+        fb = _fallback_for_request(payload)
         return JSONResponse(content=[fb.model_dump()])
     finally:
         if gate_acquired and release_gate and _predict_gate.locked():
