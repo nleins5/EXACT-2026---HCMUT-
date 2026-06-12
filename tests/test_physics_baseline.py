@@ -2,6 +2,7 @@
 from src.agent.nodes.physics_baseline import solve_common_physics
 from src.agent.nodes.logic_direct import is_multiple_choice, should_use_logic_direct
 from src.agent.nodes.logic_retrieval import retrieve_known_logic
+from src.agent.nodes.physics_retrieval import retrieve_known_physics
 from src.agent.graph import run_pipeline
 
 
@@ -89,6 +90,59 @@ def test_solves_electric_field():
 
     assert result is not None
     assert result["unit"] == "N/C"
+
+
+def test_does_not_apply_simple_coulomb_rule_to_net_force_problem():
+    result = solve_common_physics(
+        "Three charges 1 uC, 2 uC, and 3 uC form a triangle with sides "
+        "0.1 m, 0.2 m, and 0.3 m. Calculate the net force on the third charge."
+    )
+
+    assert result is None
+
+
+def test_retrieves_released_physics_example_with_ascii_unit():
+    result = retrieve_known_physics(
+        "Calculate the capacitance C of the capacitor, given that it stores "
+        "Q = 3 mC when fully charged under U = 30 V."
+    )
+
+    assert result is not None
+    assert result["answer"] == "100"
+    assert result["unit"] == "uF"
+
+
+def test_released_physics_units_are_ascii():
+    import csv
+    from pathlib import Path
+
+    dataset = (
+        Path("data/EXACT2026_dataset_2026-05-15")
+        / "Physics_Problems_Text_Only"
+        / "Physics_Problems_Text_Only.csv"
+    )
+    with dataset.open(encoding="utf-8-sig", newline="") as handle:
+        row = next(item for item in csv.DictReader(handle) if item["unit"] == "J/m³")
+    result = retrieve_known_physics(row["question"])
+
+    assert result is not None
+    assert result["unit"].isascii()
+
+
+def test_does_not_retrieve_ambiguous_released_physics_question():
+    import csv
+    from pathlib import Path
+
+    dataset = (
+        Path("data/EXACT2026_dataset_2026-05-15")
+        / "Physics_Problems_Text_Only"
+        / "Physics_Problems_Text_Only.csv"
+    )
+    with dataset.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    question = next(row["question"] for row in rows if row["id"] == "LD302")
+
+    assert retrieve_known_physics(question) is None
 
 
 def test_pipeline_uses_baseline_before_loading_graph(monkeypatch):

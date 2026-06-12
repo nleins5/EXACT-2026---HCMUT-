@@ -14,6 +14,7 @@ from src.agent.nodes.physics_formalizer import physics_formalizer_node
 from src.agent.nodes.physics_solver import physics_solver_node
 from src.agent.nodes.physics_explanation import physics_explanation_node
 from src.agent.nodes.physics_baseline import solve_common_physics
+from src.agent.nodes.physics_retrieval import retrieve_known_physics
 from src.core.config import settings
 from src.agent.runtime import cancellation_context, cancellation_guard
 from src.utils.logger import logger
@@ -186,6 +187,11 @@ def run_pipeline(
             return {"task_type": "logic", **retrieved}
 
     if not premises and task_type in {None, "physics"}:
+        retrieved = retrieve_known_physics(question)
+        if retrieved is not None:
+            logger.info("Answered Type 2 question from disclosed exact-match retrieval.")
+            return {"task_type": "physics", **retrieved}
+
         baseline = solve_common_physics(question)
         if baseline is not None:
             logger.info("Solved Type 2 question with deterministic formula baseline.")

@@ -119,8 +119,17 @@ def _extract_unit(result: dict) -> str:
     """Extract unit for Type 2 responses."""
     unit = result.get("unit")
     if isinstance(unit, str) and unit.strip():
-        normalized = unit.strip()
-        return "ohm" if normalized.casefold() == "ohm" else normalized
+        normalized = (
+            unit.strip()
+            .replace("μ", "u")
+            .replace("µ", "u")
+            .replace("Ω", "ohm")
+            .replace("²", "^2")
+            .replace("³", "^3")
+            .replace("°", "degrees ")
+            .replace("lần", "times")
+        )
+        return "" if normalized in {"-", "—"} else normalized
     return ""
 
 

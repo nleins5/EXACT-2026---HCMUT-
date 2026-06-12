@@ -159,6 +159,10 @@ def _equivalent_resistance(resistances: list[float], connection: str) -> float |
     return None
 
 
+def _has_any(text: str, phrases: tuple[str, ...]) -> bool:
+    return any(phrase in text for phrase in phrases)
+
+
 def solve_common_physics(question: str) -> dict | None:
     """Return a verified answer for strict, common formula patterns."""
     text = question.lower()
@@ -169,8 +173,42 @@ def solve_common_physics(question: str) -> dict | None:
     resistances = _values(quantities, "Ohm")
     charges = _values(quantities, "C")
     distances = _values(quantities, "m")
+    complex_context = _has_any(
+        text,
+        (
+            " after ",
+            " before ",
+            " then ",
+            " disconnected",
+            " connected with",
+            " dielectric",
+            " cut ",
+            " another ",
+            " changes",
+            " relative error",
+            " absolute error",
+            " uncertainty",
+            " rlc",
+            " impedance",
+            " resonance",
+            " alternating",
+        ),
+    )
 
-    if "energy" in text and "capacitor" in text and capacitances and voltages:
+    if (
+        _has_any(
+            text,
+            (
+                "calculate the energy stored",
+                "find the energy stored",
+                "what is the energy stored",
+            ),
+        )
+        and "capacitor" in text
+        and len(capacitances) == 1
+        and len(voltages) == 1
+        and not complex_context
+    ):
         capacitance, voltage = capacitances[0], voltages[0]
         answer = 0.5 * capacitance * voltage**2
         return _result(
@@ -198,7 +236,13 @@ def solve_common_physics(question: str) -> dict | None:
                 substitutions=f"R_i={resistances} Ohm",
             )
 
-    if "charge" in text and "capacitor" in text and capacitances and voltages:
+    if (
+        _has_any(text, ("calculate the charge", "find the charge", "what is the charge"))
+        and "capacitor" in text
+        and len(capacitances) == 1
+        and len(voltages) == 1
+        and not complex_context
+    ):
         capacitance, voltage = capacitances[0], voltages[0]
         return _result(
             answer=capacitance * voltage,
@@ -207,7 +251,22 @@ def solve_common_physics(question: str) -> dict | None:
             substitutions=f"C={capacitance:g} F and V={voltage:g} V",
         )
 
-    if ("current" in text or "amperage" in text) and voltages and resistances:
+    if (
+        _has_any(
+            text,
+            (
+                "calculate the current",
+                "find the current",
+                "what is the current",
+                "calculate the total current",
+                "find the total current",
+                "what is the total current",
+            ),
+        )
+        and voltages
+        and resistances
+        and not complex_context
+    ):
         voltage = voltages[0]
         resistance = resistances[0]
         connection = ""
@@ -237,7 +296,12 @@ def solve_common_physics(question: str) -> dict | None:
             substitutions=f"V={voltage:g} V and R_eq={resistance:g} ohm",
         )
 
-    if "voltage" in text and currents and resistances:
+    if (
+        _has_any(text, ("calculate the voltage", "find the voltage", "what is the voltage"))
+        and len(currents) == 1
+        and len(resistances) == 1
+        and not complex_context
+    ):
         current, resistance = currents[0], resistances[0]
         return _result(
             answer=current * resistance,
@@ -246,7 +310,16 @@ def solve_common_physics(question: str) -> dict | None:
             substitutions=f"I={current:g} A and R={resistance:g} Ohm",
         )
 
-    if "resistance" in text and voltages and currents and not resistances:
+    if (
+        _has_any(
+            text,
+            ("calculate the resistance", "find the resistance", "what is the resistance"),
+        )
+        and len(voltages) == 1
+        and len(currents) == 1
+        and not resistances
+        and not complex_context
+    ):
         voltage, current = voltages[0], currents[0]
         if current == 0:
             return None
@@ -257,7 +330,10 @@ def solve_common_physics(question: str) -> dict | None:
             substitutions=f"V={voltage:g} V and I={current:g} A",
         )
 
-    if ("power" in text or "watt" in text) and voltages and currents:
+    direct_power = _has_any(
+        text, ("calculate the power", "find the power", "what is the power")
+    )
+    if direct_power and len(voltages) == 1 and len(currents) == 1 and not complex_context:
         voltage, current = voltages[0], currents[0]
         return _result(
             answer=voltage * current,
@@ -266,7 +342,7 @@ def solve_common_physics(question: str) -> dict | None:
             substitutions=f"V={voltage:g} V and I={current:g} A",
         )
 
-    if ("power" in text or "watt" in text) and voltages and resistances:
+    if direct_power and len(voltages) == 1 and len(resistances) == 1 and not complex_context:
         voltage, resistance = voltages[0], resistances[0]
         if resistance == 0:
             return None
@@ -277,7 +353,7 @@ def solve_common_physics(question: str) -> dict | None:
             substitutions=f"V={voltage:g} V and R={resistance:g} Ohm",
         )
 
-    if ("power" in text or "watt" in text) and currents and resistances:
+    if direct_power and len(currents) == 1 and len(resistances) == 1 and not complex_context:
         current, resistance = currents[0], resistances[0]
         return _result(
             answer=current**2 * resistance,
@@ -286,7 +362,16 @@ def solve_common_physics(question: str) -> dict | None:
             substitutions=f"I={current:g} A and R={resistance:g} Ohm",
         )
 
-    if "capacitance" in text and charges and voltages and not capacitances:
+    if (
+        _has_any(
+            text,
+            ("calculate the capacitance", "find the capacitance", "what is the capacitance"),
+        )
+        and len(charges) == 1
+        and len(voltages) == 1
+        and not capacitances
+        and not complex_context
+    ):
         charge, voltage = charges[0], voltages[0]
         if voltage == 0:
             return None
@@ -298,7 +383,12 @@ def solve_common_physics(question: str) -> dict | None:
         )
 
     coulomb_constant = 8.9875517923e9
-    if "force" in text and len(charges) >= 2 and distances:
+    if (
+        "force between" in text
+        and len(charges) == 2
+        and len(distances) == 1
+        and not complex_context
+    ):
         q1, q2, distance = charges[0], charges[1], distances[0]
         if distance == 0:
             return None
@@ -309,7 +399,14 @@ def solve_common_physics(question: str) -> dict | None:
             substitutions=f"q1={q1:g} C, q2={q2:g} C, r={distance:g} m",
         )
 
-    if "electric field" in text and charges and distances:
+    if (
+        "electric field" in text
+        and "due to a" in text
+        and "point charge" in text
+        and len(charges) == 1
+        and len(distances) == 1
+        and not complex_context
+    ):
         charge, distance = charges[0], distances[0]
         if distance == 0:
             return None
@@ -320,7 +417,12 @@ def solve_common_physics(question: str) -> dict | None:
             substitutions=f"q={charge:g} C and r={distance:g} m",
         )
 
-    if "electric potential" in text and charges and distances:
+    if (
+        "electric potential" in text
+        and len(charges) == 1
+        and len(distances) == 1
+        and not complex_context
+    ):
         charge, distance = charges[0], distances[0]
         if distance == 0:
             return None

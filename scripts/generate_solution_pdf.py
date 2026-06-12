@@ -74,7 +74,7 @@ pdf.ln(2)
 
 pdf.body_text(
     "No closed-source teacher model, proprietary API, or larger-model distillation was used. "
-    "Runtime retrieval is limited to exact full-input matching over released Type 1 examples; "
+    "Runtime retrieval is limited to transparent exact matching over released EXACT examples; "
     "no Physics vector index is shipped or active."
 )
 
@@ -82,13 +82,13 @@ pdf.body_text(
 pdf.section("2. Approach and Method")
 pdf.body_text(
     "Our system is a LangGraph-based agentic pipeline with two branches routed by the 'type' field:\n\n"
-    "Type 1 (Logic): Exact full-input retrieval handles disclosed released examples. Otherwise "
+    "Type 1 (Logic): Unambiguous exact full-input retrieval handles disclosed released examples. Otherwise "
     "Qwen2.5-Coder-7B formalizes entailment queries into Z3/Python; the sandbox executes and "
     "verifies them. Choice and number/text queries that do not fit entailment use a short-answer "
     "Qwen2.5-7B direct path. Responses preserve exact options and 0-based premise indices.\n\n"
-    "Type 2 (Physics): A deterministic formula baseline handles common patterns (Ohm's law, "
-    "series/parallel circuits, Coulomb's law, capacitor energy, etc.) with SI conversion and "
-    "ASCII units. For complex problems, Qwen2.5-Coder-7B generates SymPy code, which runs in "
+    "Type 2 (Physics): Unambiguous released examples use transparent exact matching. A conservative "
+    "deterministic formula baseline handles direct one-step patterns with SI conversion and "
+    "ASCII units. For unseen or complex problems, Qwen2.5-Coder-7B generates SymPy code, which runs in "
     "a sandboxed subprocess with time and memory limits.\n\n"
     "Both branches share: sequential request gating (1 request at a time), 58s budget with "
     "graceful cancellation, and a model supervisor that swaps coder/instruct models on the "

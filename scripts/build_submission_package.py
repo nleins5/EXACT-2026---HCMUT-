@@ -18,6 +18,7 @@ SOURCE_PREFIXES = (
     ".github/",
     "cloudflare/",
     "config/",
+    "data/EXACT2026_dataset_2026-05-15/",
     "fine_tune/",
     "models/",
     "scripts/",
@@ -35,6 +36,7 @@ SOURCE_ROOT_FILES = {
     "test_pipeline.py",
 }
 TEAM_FILES = ("solution.pdf", "source_code.zip", "urls.txt", "notation_mapping.csv")
+MACOS_DATALESS_FLAG = 0x40000000
 
 
 def source_files() -> list[Path]:
@@ -57,7 +59,17 @@ def source_files() -> list[Path]:
 def write_zip(path: Path, files: list[Path], base: Path) -> None:
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for file in files:
-            archive.write(file, file.relative_to(base).as_posix())
+            relative = file.relative_to(base).as_posix()
+            if getattr(file.stat(), "st_flags", 0) & MACOS_DATALESS_FLAG:
+                # iCloud may evict local file contents while the tracked Git
+                # blob remains available. Reading the placeholder can time out.
+                contents = subprocess.check_output(
+                    ["git", "show", f"HEAD:{relative}"],
+                    cwd=ROOT,
+                )
+                archive.writestr(relative, contents)
+            else:
+                archive.write(file, relative)
 
 
 def main() -> None:

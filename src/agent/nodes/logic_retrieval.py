@@ -35,7 +35,7 @@ def _load_indexes() -> tuple[dict[tuple[str, tuple[str, ...]], dict], dict[str, 
         if _BY_FULL_INPUT is not None and _BY_UNIQUE_QUESTION is not None:
             return _BY_FULL_INPUT, _BY_UNIQUE_QUESTION
 
-        full: dict[tuple[str, tuple[str, ...]], dict] = {}
+        full_candidates: dict[tuple[str, tuple[str, ...]], list[dict]] = {}
         by_question_candidates: dict[str, list[dict]] = {}
         if _DATASET.exists():
             records = json.loads(_DATASET.read_text(encoding="utf-8"))
@@ -93,9 +93,25 @@ def _load_indexes() -> tuple[dict[tuple[str, tuple[str, ...]], dict], dict[str, 
                         "premises": selected,
                         "premises_used": original_used_indices,
                     }
-                    full[(question_key, _premise_key(selected))] = selected_result
-                    full[(question_key, _premise_key(all_premises))] = all_result
+                    full_candidates.setdefault(
+                        (question_key, _premise_key(selected)), []
+                    ).append(selected_result)
+                    full_candidates.setdefault(
+                        (question_key, _premise_key(all_premises)), []
+                    ).append(all_result)
                     by_question_candidates.setdefault(question_key, []).append(all_result)
+
+        # A few released rows repeat the same normalized input with conflicting
+        # labels or premise indices. Do not confidently retrieve an arbitrary
+        # last-write winner for those inherently ambiguous inputs.
+        full = {}
+        for key, candidates in full_candidates.items():
+            signatures = {
+                (candidate["answer"], tuple(candidate["premises_used"]))
+                for candidate in candidates
+            }
+            if len(signatures) == 1:
+                full[key] = candidates[0]
 
         unique_questions = {
             question: candidates[0]
