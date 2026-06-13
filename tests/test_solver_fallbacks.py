@@ -55,3 +55,7 @@ def test_physics_fallback_extracts_compound_ascii_unit():
 
 def test_extract_physics_answer_returns_none_without_marker():
     assert extract_physics_answer("R_eq = 20 Ohm") is None
+
+
+def test_extract_physics_answer_accepts_coder_expression_output():
+    assert extract_physics_answer("Answer 1: [EXPR] 12.0") == "12.0"

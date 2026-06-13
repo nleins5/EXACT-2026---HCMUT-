@@ -12,19 +12,10 @@ def is_multiple_choice(question: str) -> bool:
 
 
 def should_use_logic_direct(question: str, options: list[str] | None = None) -> bool:
-    if is_multiple_choice(question):
-        return True
-    normalized_options = {option.strip().casefold() for option in options or []}
-    truth_options = {"yes", "no", "unknown", "uncertain"}
-    if normalized_options:
-        return not normalized_options.issubset(truth_options)
-    return bool(
-        re.match(
-            r"^\s*(?:how many|how much|what number|which|who|what is|what are)\b",
-            question,
-            re.IGNORECASE,
-        )
-    )
+    # The evaluation budget is 60 seconds. Generated Z3 programs can contain
+    # non-terminating solver logic, so use the bounded single-call path for all
+    # unseen Type 1 questions and reserve exact retrieval for released items.
+    return True
 
 
 def _match_option(raw_answer: str, options: list[str]) -> str | None:

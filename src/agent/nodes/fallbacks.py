@@ -9,7 +9,15 @@ from src.utils.z3_output_parser import parse_z3_output
 
 def extract_physics_answer(code_output: str) -> str | None:
     match = re.search(r"FINAL_ANSWER:\s*(.+)", code_output, re.IGNORECASE)
-    return match.group(1).strip() if match else None
+    if match:
+        return match.group(1).strip()
+
+    expression_answers = re.findall(
+        r"^\s*Answer\s+\d+\s*:\s*\[EXPR\]\s*(.+?)\s*$",
+        code_output,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    return expression_answers[-1].strip() if expression_answers else None
 
 
 def split_physics_answer_unit(answer: str) -> tuple[str, str]:

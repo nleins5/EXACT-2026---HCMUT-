@@ -81,7 +81,7 @@ def _constrain_answer_to_options(answer: str, options: list[str]) -> str:
                 return opt
 
     logger.warning(
-        "Answer '%s' did not match any option %s; returning the first option as a last resort.",
+        "Answer '%s' did not match any option %s; returning '%s' as a last resort.",
         answer, options, options[0],
     )
     return options[0]

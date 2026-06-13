@@ -164,10 +164,19 @@ def test_detects_logic_multiple_choice_question():
     assert not is_multiple_choice("Is the conclusion true?")
     assert should_use_logic_direct("How many credits are still required?", [])
     assert should_use_logic_direct("Choose one", ["red", "blue"])
-    assert not should_use_logic_direct(
+    assert should_use_logic_direct(
         "Is the conclusion true?",
         ["Yes", "No", "Uncertain"],
     )
+
+
+def test_solves_average_speed():
+    result = solve_common_physics(
+        "A bicycle travels 150 m in 12.5 s. What is its average speed?"
+    )
+    assert result is not None
+    assert result["answer"] == "12"
+    assert result["unit"] == "m/s"
 
 
 def test_retrieves_released_logic_example():

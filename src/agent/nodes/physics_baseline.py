@@ -32,6 +32,7 @@ _QUANTITY_RE = re.compile(
     r"milliamperes?|amperes?|amps?|mA|A|"
     r"microcoulombs?|nanocoulombs?|coulombs?|uC|µC|μC|nC|C|"
     r"kiloohms?|ohms?|Ω|kohm|"
+    r"milliseconds?|seconds?|ms|s|"
     r"millimeters?|centimeters?|meters?|mm|cm|m)\b",
     re.IGNORECASE,
 )
@@ -69,6 +70,10 @@ def _canonical_unit(raw: str) -> tuple[str, float]:
         "kohm": ("Ohm", 1e3),
         "ohm": ("Ohm", 1.0),
         "ohms": ("Ohm", 1.0),
+        "millisecond": ("s", 1e-3),
+        "milliseconds": ("s", 1e-3),
+        "second": ("s", 1.0),
+        "seconds": ("s", 1.0),
         "millimeter": ("m", 1e-3),
         "millimeters": ("m", 1e-3),
         "centimeter": ("m", 1e-2),
@@ -84,7 +89,7 @@ def _canonical_unit(raw: str) -> tuple[str, float]:
         return aliases[token], 1.0
 
     suffix = token[-1]
-    unit = {"F": "F", "V": "V", "A": "A", "C": "C", "m": "m"}.get(suffix)
+    unit = {"F": "F", "V": "V", "A": "A", "C": "C", "m": "m", "s": "s"}.get(suffix)
     if unit:
         prefix = token[:-1]
         return unit, _PREFIXES.get(prefix, 1.0)
@@ -173,6 +178,7 @@ def solve_common_physics(question: str) -> dict | None:
     resistances = _values(quantities, "Ohm")
     charges = _values(quantities, "C")
     distances = _values(quantities, "m")
+    times = _values(quantities, "s")
     complex_context = _has_any(
         text,
         (
@@ -194,6 +200,21 @@ def solve_common_physics(question: str) -> dict | None:
             " alternating",
         ),
     )
+
+    if (
+        _has_any(text, ("average speed", "calculate the speed", "find the speed", "what is its speed"))
+        and len(distances) == 1
+        and len(times) == 1
+        and times[0] != 0
+        and not complex_context
+    ):
+        distance, duration = distances[0], times[0]
+        return _result(
+            answer=distance / duration,
+            unit="m/s",
+            formula="v = d / t",
+            substitutions=f"d={distance:g} m and t={duration:g} s",
+        )
 
     if (
         _has_any(
