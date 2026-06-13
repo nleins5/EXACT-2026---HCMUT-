@@ -75,6 +75,7 @@ def _parse_direct_response(raw_response: str) -> tuple[str, list[int] | None]:
 
 def _normalize_predicate(text: str, subject: str = "") -> str:
     normalized = re.sub(r"\s+", " ", text).strip(" \t\r\n.,;:").casefold()
+    normalized = re.sub(r"\bhas\b", "have", normalized)
     if subject and normalized.startswith(f"{subject.casefold()} "):
         normalized = normalized[len(subject) + 1 :]
     normalized = re.sub(
@@ -143,6 +144,61 @@ def _minimal_rule_proof(
     return sorted(proof) if proof else None
 
 
+def _explicit_uncertainty_evidence(question: str, premises: list[str]) -> list[int] | None:
+    """Find premises that explicitly state the queried fact is unspecified."""
+    query = re.sub(
+        r"^\s*(?:does|do|is|are|can|could|will|would|has|have|had)\s+",
+        "",
+        question,
+        flags=re.IGNORECASE,
+    )
+    query = _normalize_predicate(query.rstrip("?"))
+    matches = []
+    for index, premise in enumerate(premises):
+        normalized = _normalize_predicate(premise)
+        if (
+            re.search(r"\b(?:no premise states|not stated|not specified|unknown)\b", normalized)
+            and query
+            and query in normalized
+        ):
+            matches.append(index)
+    return matches or None
+
+
+def _minimal_free_form_evidence(
+    question: str,
+    answer: str,
+    premises: list[str],
+) -> list[int] | None:
+    """Trace free-form numeric and entity answers to their minimal premises."""
+    which_match = re.match(
+        r"^\s*which\s+\w+\s+(.+?)\?\s*$",
+        question,
+        re.IGNORECASE,
+    )
+    if which_match and answer:
+        proof = _minimal_rule_proof(
+            f"{answer} {which_match.group(1)}",
+            premises,
+        )
+        if proof is not None:
+            return proof
+
+    if re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)", answer.strip()):
+        answer_pattern = re.compile(
+            rf"(?<![\w.]){re.escape(answer.strip())}(?![\w.])",
+            re.IGNORECASE,
+        )
+        candidates = [
+            index
+            for index, premise in enumerate(premises)
+            if answer_pattern.search(premise)
+        ]
+        if len(candidates) == 1:
+            return candidates
+    return None
+
+
 def logic_direct_node(state: AgentState) -> dict:
     premises = list(state.get("premises", []) or [])
     options = list(state.get("options", []) or [])
@@ -205,6 +261,21 @@ No only when its negation is entailed, and Uncertain otherwise.
             re.MULTILINE | re.DOTALL,
         )
         option_text = option_match.group(1).strip() if option_match else answer
+        if answer.casefold() in {"uncertain", "unknown"}:
+            uncertainty_evidence = _explicit_uncertainty_evidence(
+                state["question"],
+                premises,
+            )
+            if uncertainty_evidence is not None:
+                premises_used = uncertainty_evidence
+        elif not options:
+            free_form_evidence = _minimal_free_form_evidence(
+                state["question"],
+                answer,
+                premises,
+            )
+            if free_form_evidence is not None:
+                premises_used = free_form_evidence
         if options and all(
             re.fullmatch(r"[A-D]", option.strip(), re.IGNORECASE) for option in options
         ):
