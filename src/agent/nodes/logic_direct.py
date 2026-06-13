@@ -1,6 +1,7 @@
 """Single-call solver for Type 1 multiple-choice questions."""
 from __future__ import annotations
 
+import json
 import re
 
 from src.agent.state import AgentState
@@ -36,16 +37,36 @@ def _match_option(raw_answer: str, options: list[str]) -> str | None:
     return None
 
 
+def _parse_direct_response(raw_response: str) -> tuple[str, list[int] | None]:
+    """Parse the compact JSON requested from the direct logic model."""
+    match = re.search(r"\{.*\}", raw_response, re.DOTALL)
+    if not match:
+        return raw_response, None
+    try:
+        payload = json.loads(match.group(0))
+    except (TypeError, ValueError):
+        return raw_response, None
+
+    answer = str(payload.get("answer") or "").strip()
+    raw_indices = payload.get("premises_used")
+    if not isinstance(raw_indices, list):
+        return answer or raw_response, None
+    indices = [
+        index
+        for index in raw_indices
+        if isinstance(index, int) and not isinstance(index, bool)
+    ]
+    return answer or raw_response, indices
+
+
 def logic_direct_node(state: AgentState) -> dict:
     premises = list(state.get("premises", []) or [])
     options = list(state.get("options", []) or [])
-    premises_block = "\n".join(f"{index + 1}. {item}" for index, item in enumerate(premises))
+    premises_block = "\n".join(f"[{index}] {item}" for index, item in enumerate(premises))
     options_block = "\n".join(f"- {option}" for option in options)
-    output_instruction = (
-        "Return ONLY the exact text of one supplied option. No explanation or punctuation."
-        if options
-        else "Return ONLY the short final answer. No explanation, label, or punctuation."
-    )
+    output_instruction = """Return ONLY compact JSON in this exact shape:
+{"answer":"<exact supplied option or short answer>","premises_used":[<zero-based indices>]}
+premises_used must be the smallest sufficient set of premise indices. Do not include irrelevant premises."""
     prompt = f"""Solve this logic question using only the supplied premises.
 
 Premises:
@@ -57,6 +78,9 @@ Question:
 Options:
 {options_block or "(free-form answer)"}
 
+For Yes/No/Uncertain questions: answer Yes only when the conclusion is entailed,
+No only when its negation is entailed, and Uncertain otherwise.
+
 {output_instruction}
 """
 
@@ -64,11 +88,12 @@ Options:
         from src.agent.llm.factory import LLMFactory
 
         response = LLMFactory.activate("instruct").get_llm().invoke(prompt)
-        raw_answer = str(response.content or "").strip()
+        raw_response = str(response.content or "").strip()
+        raw_answer, selected_indices = _parse_direct_response(raw_response)
         if options:
             answer = _match_option(raw_answer, options)
             if answer is None:
-                raise ValueError(f"Invalid choice answer: {raw_answer!r}")
+                raise ValueError(f"Invalid choice answer: {raw_response!r}")
         elif is_multiple_choice(state["question"]):
             match = re.search(r"\b(?:ANSWER|OPTION|CHOICE)\s*(?:IS|:|-)?\s*([A-D])\b", raw_answer, re.I)
             if match is None and re.fullmatch(r"\s*[A-D]\s*", raw_answer, re.I):
@@ -85,6 +110,11 @@ Options:
             ).strip(" \t\r\n.\"'")
             if not answer:
                 raise ValueError("Empty direct answer")
+        premises_used = (
+            sorted({index for index in selected_indices if 0 <= index < len(premises)})
+            if selected_indices is not None
+            else list(range(len(premises)))
+        )
         option_match = re.search(
             rf"^{answer}\.\s*(.+?)(?=^[A-D]\.\s|\Z)",
             state["question"],
@@ -104,7 +134,7 @@ Options:
                     f"Selected answer: {option_text}",
                 ],
                 "premises": premises,
-                "premises_used": list(range(len(premises))),
+                "premises_used": premises_used,
                 "unit": "",
                 "confidence": 0.75,
             }

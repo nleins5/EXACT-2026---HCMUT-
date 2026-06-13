@@ -92,7 +92,7 @@ def _extract_premises_used(result: dict, num_premises: int) -> list[int]:
     raw = result.get("premises_used")
 
     # If the pipeline already returns int indices, use them
-    if isinstance(raw, list) and raw and all(isinstance(i, int) for i in raw):
+    if isinstance(raw, list) and all(isinstance(i, int) for i in raw):
         return [i for i in raw if 0 <= i < num_premises]
 
     # Legacy: premises field contains text — try to match to indices

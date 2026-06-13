@@ -172,7 +172,7 @@ def test_choice_fallback_still_returns_a_valid_option():
     assert result.query_id == "T1_FALLBACK"
 
 
-def test_empty_logic_premises_used_falls_back_to_all_input_indices():
+def test_empty_logic_premises_used_is_preserved():
     result = predict_route._sanitize_response(
         {
             "task_type": "logic",
@@ -186,7 +186,7 @@ def test_empty_logic_premises_used_falls_back_to_all_input_indices():
         task_type_hint="logic",
     )
 
-    assert result.premises_used == [0, 1, 2]
+    assert result.premises_used == []
 
 
 def test_models_endpoint_reports_unreachable_runtime(monkeypatch):
