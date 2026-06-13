@@ -73,6 +73,76 @@ def _parse_direct_response(raw_response: str) -> tuple[str, list[int] | None]:
     return answer or raw_response, indices
 
 
+def _normalize_predicate(text: str, subject: str = "") -> str:
+    normalized = re.sub(r"\s+", " ", text).strip(" \t\r\n.,;:").casefold()
+    if subject and normalized.startswith(f"{subject.casefold()} "):
+        normalized = normalized[len(subject) + 1 :]
+    normalized = re.sub(
+        r"^(?:a|an|the|that|every|each|all)\s+\w+\s+(?:who\s+)?",
+        "",
+        normalized,
+    )
+    return normalized.strip()
+
+
+def _parse_implication(premise: str) -> tuple[list[str], str] | None:
+    match = re.match(r"^\s*if\s+(.+?),?\s+then\s+(.+?)\.?\s*$", premise, re.I)
+    if not match:
+        return None
+    antecedents = [
+        _normalize_predicate(part)
+        for part in re.split(r"\s+and\s+", match.group(1), flags=re.I)
+    ]
+    consequent = _normalize_predicate(match.group(2))
+    return [item for item in antecedents if item], consequent
+
+
+def _minimal_rule_proof(
+    answer_text: str,
+    premises: list[str],
+) -> list[int] | None:
+    """Return a minimal proof for simple named-subject implication chains."""
+    subject_match = re.match(r"^\s*([A-Z][\w'-]*)\s+(.+?)\s*$", answer_text)
+    if not subject_match:
+        return None
+    subject, target_text = subject_match.groups()
+    target = _normalize_predicate(target_text)
+
+    facts: dict[str, int] = {}
+    rules: list[tuple[int, list[str], str]] = []
+    for index, premise in enumerate(premises):
+        implication = _parse_implication(premise)
+        if implication:
+            antecedents, consequent = implication
+            rules.append((index, antecedents, consequent))
+            continue
+        if premise.casefold().startswith(f"{subject.casefold()} "):
+            facts[_normalize_predicate(premise, subject)] = index
+
+    def prove(goal: str, visiting: set[str]) -> set[int] | None:
+        if goal in visiting:
+            return None
+        if goal in facts:
+            return {facts[goal]}
+        visiting = {*visiting, goal}
+        candidates: list[set[int]] = []
+        for rule_index, antecedents, consequent in rules:
+            if consequent != goal:
+                continue
+            proof = {rule_index}
+            for antecedent in antecedents:
+                branch = prove(antecedent, visiting)
+                if branch is None:
+                    break
+                proof.update(branch)
+            else:
+                candidates.append(proof)
+        return min(candidates, key=len) if candidates else None
+
+    proof = prove(target, set())
+    return sorted(proof) if proof else None
+
+
 def logic_direct_node(state: AgentState) -> dict:
     premises = list(state.get("premises", []) or [])
     options = list(state.get("options", []) or [])
@@ -135,6 +205,12 @@ No only when its negation is entailed, and Uncertain otherwise.
             re.MULTILINE | re.DOTALL,
         )
         option_text = option_match.group(1).strip() if option_match else answer
+        if options and all(
+            re.fullmatch(r"[A-D]", option.strip(), re.IGNORECASE) for option in options
+        ):
+            minimal_proof = _minimal_rule_proof(option_text, premises)
+            if minimal_proof is not None:
+                premises_used = minimal_proof
         return {
             "final_answer": {
                 "answer": answer,

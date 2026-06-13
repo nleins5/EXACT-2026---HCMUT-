@@ -1,4 +1,8 @@
-from src.agent.nodes.logic_direct import _match_option, _parse_direct_response
+from src.agent.nodes.logic_direct import (
+    _match_option,
+    _minimal_rule_proof,
+    _parse_direct_response,
+)
 
 
 def test_parse_direct_response_reads_answer_and_minimal_premises():
@@ -38,3 +42,18 @@ D. None"""
         ["A", "B", "C", "D"],
         question,
     ) == "A"
+
+
+def test_minimal_rule_proof_excludes_downstream_and_unrelated_premises():
+    premises = [
+        "If a researcher completed ethics training and has lab access, then that researcher can handle participant data.",
+        "If a researcher can handle participant data and has supervisor approval, then that researcher may join Study Alpha.",
+        "Every researcher who may join Study Alpha is listed as an active contributor.",
+        "Asha completed ethics training.",
+        "Asha has lab access.",
+        "Asha has supervisor approval.",
+        "Study Alpha has 12 enrolled participants.",
+        "No premise states whether Asha has budget approval.",
+    ]
+
+    assert _minimal_rule_proof("Asha may join Study Alpha", premises) == [0, 1, 3, 4, 5]
