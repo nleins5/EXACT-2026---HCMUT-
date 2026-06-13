@@ -19,7 +19,7 @@ def should_use_logic_direct(question: str, options: list[str] | None = None) -> 
     return True
 
 
-def _match_option(raw_answer: str, options: list[str]) -> str | None:
+def _match_option(raw_answer: str, options: list[str], question: str = "") -> str | None:
     cleaned = re.sub(
         r"^\s*(?:answer|option|choice)\s*(?:is|:|-)?\s*",
         "",
@@ -34,6 +34,20 @@ def _match_option(raw_answer: str, options: list[str]) -> str | None:
         for option in options:
             if option.strip().casefold() == marker.group(1).casefold():
                 return option
+
+    # Evaluators may supply letter-only options while the model returns the
+    # corresponding option text embedded in the question.
+    if all(re.fullmatch(r"[A-D]", option.strip(), re.IGNORECASE) for option in options):
+        option_texts = re.findall(
+            r"(?:^|\n)\s*([A-D])\.\s*(.+?)(?=(?:\n\s*[A-D]\.\s)|\Z)",
+            question,
+            re.DOTALL,
+        )
+        for label, text in option_texts:
+            if cleaned.casefold() == text.strip().casefold():
+                for option in options:
+                    if option.strip().casefold() == label.casefold():
+                        return option
     return None
 
 
@@ -91,7 +105,7 @@ No only when its negation is entailed, and Uncertain otherwise.
         raw_response = str(response.content or "").strip()
         raw_answer, selected_indices = _parse_direct_response(raw_response)
         if options:
-            answer = _match_option(raw_answer, options)
+            answer = _match_option(raw_answer, options, state["question"])
             if answer is None:
                 raise ValueError(f"Invalid choice answer: {raw_response!r}")
         elif is_multiple_choice(state["question"]):
