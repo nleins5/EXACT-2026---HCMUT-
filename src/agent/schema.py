@@ -11,4 +11,5 @@ class ExactResponse(BaseModel):
     fol: Optional[str] = Field(None, description="First-Order Logic translation")
     cot: Optional[List[str]] = Field(None, description="Chain-of-Thought reasoning steps")
     premises: Optional[List[str]] = Field(None, description="List of premises used")
+    premises_used: Optional[List[int]] = Field(None, description="0-based integer indices of premises strictly required to solve the problem")
     confidence: Optional[float] = Field(None, description="Model confidence score (0.0 - 1.0)")

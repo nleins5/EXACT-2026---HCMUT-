@@ -21,6 +21,7 @@ Return a structured response matching the schema:
 - fol: optional First-Order Logic formalization.
 - cot: REQUIRED. List of reasoning steps. You MUST include one step that references the Z3 solver tool call and its output (e.g., "Used Z3 theorem prover to verify: ..."). This is required for evaluation transparency.
 - premises: optional list of rules used.
+- premises_used: REQUIRED. A list of 0-based integer indices corresponding to the premises that were strictly necessary to derive the answer. Do not include irrelevant premises.
 - confidence: optional float 0.0-1.0.
 
 Trust the Z3 output for the final answer. No extra prose outside the schema.
@@ -49,7 +50,8 @@ Execution error:
 Task:
 1. Read the broken Z3 code as a hint for entities/constraints the model identified.
 2. Solve the problem yourself.
-3. Return the structured response (answer, explanation, fol?, cot?, premises?, confidence?).
+3. Return the structured response (answer, explanation, fol?, cot?, premises?, premises_used?, confidence?).
+   `premises_used` MUST be a list of 0-based integer indices of the exact premises needed for your deduction.
    Lower confidence since the solver failed. No prose outside the schema.
    
 CRITICAL CONSTRAINTS:

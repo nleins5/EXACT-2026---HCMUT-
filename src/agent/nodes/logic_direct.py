@@ -199,14 +199,18 @@ def _minimal_free_form_evidence(
     return None
 
 
+from pydantic import BaseModel, Field
+
+class DirectResponse(BaseModel):
+    answer: str = Field(..., description="The exact text of one supplied option, or the short final answer. No explanation.")
+    premises_used: list[int] = Field(..., description="A list of 0-based integer indices of the premises strictly necessary to solve the problem. Do not include irrelevant premises.")
+
 def logic_direct_node(state: AgentState) -> dict:
     premises = list(state.get("premises", []) or [])
     options = list(state.get("options", []) or [])
     premises_block = "\n".join(f"[{index}] {item}" for index, item in enumerate(premises))
     options_block = "\n".join(f"- {option}" for option in options)
-    output_instruction = """Return ONLY compact JSON in this exact shape:
-{"answer":"<exact supplied option or short answer>","premises_used":[<zero-based indices>]}
-premises_used must be the smallest sufficient set of premise indices. Do not include irrelevant premises."""
+
     prompt = f"""Solve this logic question using only the supplied premises.
 
 Premises:
@@ -221,19 +225,21 @@ Options:
 For Yes/No/Uncertain questions: answer Yes only when the conclusion is entailed,
 No only when its negation is entailed, and Uncertain otherwise.
 
-{output_instruction}
+Return a structured response with your short final answer and the exact indices of the premises used.
 """
 
     try:
         from src.agent.llm.factory import LLMFactory
 
-        response = LLMFactory.activate("instruct").get_llm().invoke(prompt)
-        raw_response = str(response.content or "").strip()
-        raw_answer, selected_indices = _parse_direct_response(raw_response)
+        structured_llm = LLMFactory.activate("instruct").get_structured_llm(DirectResponse)
+        response: DirectResponse = structured_llm.invoke(prompt)
+        raw_answer = str(response.answer or "").strip()
+        selected_indices = response.premises_used
+
         if options:
             answer = _match_option(raw_answer, options, state["question"])
             if answer is None:
-                raise ValueError(f"Invalid choice answer: {raw_response!r}")
+                raise ValueError(f"Invalid choice answer: {raw_answer!r}")
         elif is_multiple_choice(state["question"]):
             match = re.search(r"\b(?:ANSWER|OPTION|CHOICE)\s*(?:IS|:|-)?\s*([A-D])\b", raw_answer, re.I)
             if match is None and re.fullmatch(r"\s*[A-D]\s*", raw_answer, re.I):
@@ -250,17 +256,20 @@ No only when its negation is entailed, and Uncertain otherwise.
             ).strip(" \t\r\n.\"'")
             if not answer:
                 raise ValueError("Empty direct answer")
+
         premises_used = (
             sorted({index for index in selected_indices if 0 <= index < len(premises)})
             if selected_indices is not None
             else list(range(len(premises)))
         )
+
         option_match = re.search(
             rf"^{answer}\.\s*(.+?)(?=^[A-D]\.\s|\Z)",
             state["question"],
             re.MULTILINE | re.DOTALL,
         )
         option_text = option_match.group(1).strip() if option_match else answer
+
         if answer.casefold() in {"uncertain", "unknown"}:
             uncertainty_evidence = _explicit_uncertainty_evidence(
                 state["question"],
@@ -282,6 +291,7 @@ No only when its negation is entailed, and Uncertain otherwise.
             minimal_proof = _minimal_rule_proof(option_text, premises)
             if minimal_proof is not None:
                 premises_used = minimal_proof
+
         return {
             "final_answer": {
                 "answer": answer,
