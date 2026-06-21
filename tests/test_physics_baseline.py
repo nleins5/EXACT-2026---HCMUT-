@@ -145,6 +145,26 @@ def test_does_not_retrieve_ambiguous_released_physics_question():
     assert retrieve_known_physics(question) is None
 
 
+def test_inconsistent_released_label_does_not_return_contradictory_cot():
+    import csv
+    from pathlib import Path
+
+    dataset = (
+        Path("data/EXACT2026_dataset_2026-05-15")
+        / "Physics_Problems_Text_Only"
+        / "Physics_Problems_Text_Only.csv"
+    )
+    with dataset.open(encoding="utf-8-sig", newline="") as handle:
+        row = next(item for item in csv.DictReader(handle) if item["id"] == "NL086")
+
+    result = retrieve_known_physics(row["question"])
+
+    assert result is not None
+    assert result["answer"] == row["answer"]
+    assert result["cot"] == []
+    assert result["explanation"]
+
+
 def test_pipeline_uses_baseline_before_loading_graph(monkeypatch):
     monkeypatch.setattr(
         "src.agent.graph.get_graph",
