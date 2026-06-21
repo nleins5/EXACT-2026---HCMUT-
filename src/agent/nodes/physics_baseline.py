@@ -28,12 +28,12 @@ _QUANTITY_RE = re.compile(
     r"(?<![\w.])(-?\d+(?:\.\d+)?)\s*"
     r"(microfarads?|farads?|pF|nF|uF|µF|μF|mF|F|"
     r"millivolts?|kilovolts?|volts?|mV|kV|V|"
-    r"milliamperes?|amperes?|amps?|mA|A|"
-    r"microcoulombs?|nanocoulombs?|coulombs?|uC|µC|μC|nC|C|"
+    r"milliamperes?|microamperes?|amperes?|amps?|mA|uA|µA|μA|A|"
+    r"microcoulombs?|nanocoulombs?|millicoulombs?|coulombs?|mC|uC|µC|μC|nC|pC|C|"
     r"kiloohms?|ohms?|kΩ|Ω|kohm|"
-    r"millihenries?|henries?|mH|H|"
+    r"millihenries?|microhenries?|henries?|mH|uH|µH|μH|H|"
     r"kilohertz|hertz|kHz|Hz|"
-    r"millijoules?|joules?|mJ|J|"
+    r"millijoules?|microjoules?|nanojoules?|joules?|mJ|uJ|µJ|μJ|nJ|pJ|J|"
     r"newtons?|N|"
     r"milliseconds?|seconds?|ms|s|"
     r"kilograms?|grams?|kg|g|"
@@ -163,6 +163,62 @@ def _format_number(value: float) -> str:
     return f"{value:.12g}"
 
 
+_ROUNDING_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+}
+
+
+def _apply_requested_rounding(value: float, question: str) -> float:
+    match = re.search(
+        r"round(?:ed)?(?:\s+the\s+(?:result|answer))?\s+to\s+"
+        r"(one|two|three|four|five|six|\d+)\s+decimal places?",
+        question,
+        re.IGNORECASE,
+    )
+    if not match:
+        return value
+    raw_places = match.group(1).lower()
+    places = _ROUNDING_WORDS.get(raw_places, int(raw_places) if raw_places.isdigit() else 0)
+    return round(value, places)
+
+
+def _engineering_quantity(
+    value_si: float,
+    base_unit: str,
+    question: str,
+    units: tuple[tuple[str, float], ...],
+    min_scaled: float = 1.0,
+) -> tuple[float, str]:
+    """Choose an evaluator-friendly engineering unit for small SI values."""
+    for unit, factor in units:
+        explicit = re.search(
+            rf"(?:unit\s*:\s*{re.escape(unit)}\b|"
+            rf"answer\s+in\s+{re.escape(unit)}\b|"
+            rf"result\s+in\s+{re.escape(unit)}\b|"
+            rf"\({re.escape(unit)}\))",
+            question,
+            re.IGNORECASE,
+        )
+        if explicit:
+            return _apply_requested_rounding(value_si / factor, question), unit
+
+    magnitude = abs(value_si)
+    if magnitude >= 1e-3:
+        return _apply_requested_rounding(value_si, question), base_unit
+    for unit, factor in units:
+        if unit == base_unit:
+            continue
+        scaled = magnitude / factor if factor else magnitude
+        if scaled >= min_scaled or unit == units[-1][0]:
+            return _apply_requested_rounding(value_si / factor, question), unit
+    return _apply_requested_rounding(value_si, question), base_unit
+
+
 def _result(
     *,
     answer: float,
@@ -253,6 +309,13 @@ def solve_common_physics(question: str) -> dict | None:
             "collision",
             "spring",
             "projectile",
+            "power factor",
+            "through each",
+            "each lamp",
+            "each bulb",
+            "and the total",
+            "sqrt",
+            "√",
         ),
     )
 
@@ -308,18 +371,23 @@ def solve_common_physics(question: str) -> dict | None:
         )
 
     magnetic_energy = "magnetic" in text and "energy" in text and "inductor" in text
-    if magnetic_energy and len(inductances) == 1 and len(currents) == 1 and not energies:
+    if magnetic_energy and len(inductances) == 1 and len(currents) == 1 and not energies and not complex_context:
         inductance, current = inductances[0], currents[0]
         energy = 0.5 * inductance * current**2
-        if re.search(r"(?:energy\s*\(mJ\)|unit\s*:\s*mJ)", question, re.I):
-            return _result(answer=energy * 1e3, unit="mJ", formula="W = 0.5 * L * I^2", substitutions=f"L={inductance:g} H and I={current:g} A")
-        return _result(answer=energy, unit="J", formula="W = 0.5 * L * I^2", substitutions=f"L={inductance:g} H and I={current:g} A")
+        scaled_energy, output_unit = _engineering_quantity(
+            energy,
+            "J",
+            question,
+            (("J", 1.0), ("mJ", 1e-3), ("uJ", 1e-6), ("nJ", 1e-9)),
+        )
+        return _result(answer=scaled_energy, unit=output_unit, formula="W = 0.5 * L * I^2", substitutions=f"L={inductance:g} H and I={current:g} A")
 
-    if magnetic_energy and len(energies) == 1 and len(inductances) == 1 and not currents:
+    if magnetic_energy and len(energies) == 1 and len(inductances) == 1 and not currents and not complex_context:
         energy, inductance = energies[0], inductances[0]
-        return _result(answer=math.sqrt(2 * energy / inductance), unit="A", formula="I = sqrt(2W / L)", substitutions=f"W={energy:g} J and L={inductance:g} H")
+        current = _apply_requested_rounding(math.sqrt(2 * energy / inductance), question)
+        return _result(answer=current, unit="A", formula="I = sqrt(2W / L)", substitutions=f"W={energy:g} J and L={inductance:g} H")
 
-    if magnetic_energy and len(energies) == 1 and len(currents) == 1 and not inductances:
+    if magnetic_energy and len(energies) == 1 and len(currents) == 1 and not inductances and not complex_context:
         energy, current = energies[0], currents[0]
         inductance = 2 * energy / current**2
         requested_mh = bool(re.search(r"inductance\s*\(mH\)|unit\s*:\s*mH", question, re.I))
@@ -332,11 +400,11 @@ def solve_common_physics(question: str) -> dict | None:
         if _has_any(text, ("resonant frequency", "resonance frequency", "natural oscillation frequency")):
             return _result(answer=1 / (2 * math.pi * math.sqrt(inductance * capacitance)), unit="Hz", formula="f = 1 / (2*pi*sqrt(L*C))", substitutions=f"L={inductance:g} H and C={capacitance:g} F")
 
-    if len(frequencies) == 1 and len(inductances) == 1 and "inductive reactance" in text:
+    if len(frequencies) == 1 and len(inductances) == 1 and "inductive reactance" in text and not complex_context:
         frequency, inductance = frequencies[0], inductances[0]
         return _result(answer=2 * math.pi * frequency * inductance, unit="ohm", formula="X_L = 2*pi*f*L", substitutions=f"f={frequency:g} Hz and L={inductance:g} H")
 
-    if len(frequencies) == 1 and len(capacitances) == 1 and "capacitive reactance" in text:
+    if len(frequencies) == 1 and len(capacitances) == 1 and "capacitive reactance" in text and not complex_context:
         frequency, capacitance = frequencies[0], capacitances[0]
         return _result(answer=1 / (2 * math.pi * frequency * capacitance), unit="ohm", formula="X_C = 1 / (2*pi*f*C)", substitutions=f"f={frequency:g} Hz and C={capacitance:g} F")
 
@@ -426,9 +494,15 @@ def solve_common_physics(question: str) -> dict | None:
     ):
         capacitance, voltage = capacitances[0], voltages[0]
         answer = 0.5 * capacitance * voltage**2
+        scaled_answer, output_unit = _engineering_quantity(
+            answer,
+            "J",
+            question,
+            (("J", 1.0), ("mJ", 1e-3), ("uJ", 1e-6), ("nJ", 1e-9), ("pJ", 1e-12)),
+        )
         return _result(
-            answer=answer,
-            unit="J",
+            answer=scaled_answer,
+            unit=output_unit,
             formula="E = 0.5 * C * V^2",
             substitutions=f"C={capacitance:g} F and V={voltage:g} V",
         )
@@ -459,9 +533,16 @@ def solve_common_physics(question: str) -> dict | None:
         and not complex_context
     ):
         capacitance, voltage = capacitances[0], voltages[0]
+        charge, output_unit = _engineering_quantity(
+            capacitance * voltage,
+            "C",
+            question,
+            (("C", 1.0), ("mC", 1e-3), ("uC", 1e-6), ("nC", 1e-9), ("pC", 1e-12)),
+            min_scaled=0.1,
+        )
         return _result(
-            answer=capacitance * voltage,
-            unit="C",
+            answer=charge,
+            unit=output_unit,
             formula="Q = C * V",
             substitutions=f"C={capacitance:g} F and V={voltage:g} V",
         )
@@ -590,9 +671,15 @@ def solve_common_physics(question: str) -> dict | None:
         charge, voltage = charges[0], voltages[0]
         if voltage == 0:
             return None
+        capacitance, output_unit = _engineering_quantity(
+            charge / voltage,
+            "F",
+            question,
+            (("F", 1.0), ("mF", 1e-3), ("uF", 1e-6), ("nF", 1e-9), ("pF", 1e-12)),
+        )
         return _result(
-            answer=charge / voltage,
-            unit="F",
+            answer=capacitance,
+            unit=output_unit,
             formula="C = Q / V",
             substitutions=f"Q={charge:g} C and V={voltage:g} V",
         )

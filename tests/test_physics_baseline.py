@@ -255,6 +255,36 @@ def test_solves_resultant_force_at_angle():
     assert result["unit"] == "N"
 
 
+def test_scales_small_capacitor_charge_to_nanocoulombs():
+    result = solve_common_physics(
+        "A capacitor with capacitance 21.96 pF is charged to 28.8 V. Calculate the charge stored."
+    )
+    assert result is not None
+    assert abs(float(result["answer"]) - 0.632448) < 1e-9
+    assert result["unit"] == "nC"
+
+
+def test_scales_small_capacitor_energy_to_nanojoules():
+    result = solve_common_physics(
+        "Calculate the energy stored in a capacitor with C = 47.93 pF and V = 70.1 V."
+    )
+    assert result is not None
+    assert abs(float(result["answer"]) - 117.76424965) < 1e-6
+    assert result["unit"] == "nJ"
+
+
+def test_skips_symbolic_radical_current():
+    assert solve_common_physics(
+        "An inductor has L = 0.5 H and current 2√2 A. What is its magnetic energy?"
+    ) is None
+
+
+def test_skips_multi_output_reactance_question():
+    assert solve_common_physics(
+        "Given R = 12 ohm, C = 80 uF, and f = 60 Hz, determine the capacitive reactance and the power factor."
+    ) is None
+
+
 def test_retrieves_released_logic_example():
     import json
     from pathlib import Path
