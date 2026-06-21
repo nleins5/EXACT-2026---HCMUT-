@@ -26,16 +26,25 @@ _PREFIXES = {
 
 _QUANTITY_RE = re.compile(
     r"(?<![\w.])(-?\d+(?:\.\d+)?)\s*"
-    r"(p|n|u|µ|μ|m|k|M)?\s*"
     r"(microfarads?|farads?|pF|nF|uF|µF|μF|mF|F|"
     r"millivolts?|kilovolts?|volts?|mV|kV|V|"
     r"milliamperes?|amperes?|amps?|mA|A|"
     r"microcoulombs?|nanocoulombs?|coulombs?|uC|µC|μC|nC|C|"
-    r"kiloohms?|ohms?|Ω|kohm|"
+    r"kiloohms?|ohms?|kΩ|Ω|kohm|"
+    r"millihenries?|henries?|mH|H|"
+    r"kilohertz|hertz|kHz|Hz|"
+    r"millijoules?|joules?|mJ|J|"
+    r"newtons?|N|"
     r"milliseconds?|seconds?|ms|s|"
+    r"kilograms?|grams?|kg|g|"
+    r"meters per second squared|metres per second squared|m/s\^?2|m/s²|"
+    r"meters per second|metres per second|m/s|"
     r"millimeters?|centimeters?|meters?|mm|cm|m)\b",
     re.IGNORECASE,
 )
+
+_GRAVITY_RE = re.compile(r"\bg\s*(?:=|is)?\s*(-?\d+(?:\.\d+)?)\s*(?:m/s\^?2|m/s²)?\b", re.I)
+_ANGLE_RE = re.compile(r"(?:angle(?:\s+of)?|inclined at(?: an angle of)?)\s*(\d+(?:\.\d+)?)\s*(?:°|degrees?)", re.I)
 
 
 def _canonical_unit(raw: str) -> tuple[str, float]:
@@ -80,16 +89,45 @@ def _canonical_unit(raw: str) -> tuple[str, float]:
         "centimeters": ("m", 1e-2),
         "meter": ("m", 1.0),
         "meters": ("m", 1.0),
+        "millihenry": ("H", 1e-3),
+        "millihenries": ("H", 1e-3),
+        "henry": ("H", 1.0),
+        "henries": ("H", 1.0),
+        "kilohertz": ("Hz", 1e3),
+        "hertz": ("Hz", 1.0),
+        "millijoule": ("J", 1e-3),
+        "millijoules": ("J", 1e-3),
+        "joule": ("J", 1.0),
+        "joules": ("J", 1.0),
+        "newton": ("N", 1.0),
+        "newtons": ("N", 1.0),
+        "kilogram": ("kg", 1.0),
+        "kilograms": ("kg", 1.0),
+        "gram": ("kg", 1e-3),
+        "grams": ("kg", 1e-3),
+        "meters per second": ("m/s", 1.0),
+        "metres per second": ("m/s", 1.0),
+        "meters per second squared": ("m/s^2", 1.0),
+        "metres per second squared": ("m/s^2", 1.0),
     }
     if lower in spelled:
         return spelled[lower]
 
-    aliases = {"ω": "Ohm", "Ω": "Ohm"}
+    aliases = {"ω": "Ohm", "Ω": "Ohm", "kΩ": "Ohm"}
     if token in aliases:
-        return aliases[token], 1.0
+        return aliases[token], 1e3 if token == "kΩ" else 1.0
 
     suffix = token[-1]
-    unit = {"F": "F", "V": "V", "A": "A", "C": "C", "m": "m", "s": "s"}.get(suffix)
+    if lower in {"m/s", "m/s2", "m/s^2", "m/s²"}:
+        return ("m/s^2", 1.0) if "2" in lower or "²" in lower else ("m/s", 1.0)
+    if lower in {"hz", "khz"}:
+        return "Hz", 1e3 if lower == "khz" else 1.0
+    if lower == "kg":
+        return "kg", 1.0
+    if lower == "g":
+        return "kg", 1e-3
+
+    unit = {"F": "F", "V": "V", "A": "A", "C": "C", "H": "H", "J": "J", "N": "N", "m": "m", "s": "s"}.get(suffix)
     if unit:
         prefix = token[:-1]
         return unit, _PREFIXES.get(prefix, 1.0)
@@ -100,17 +138,21 @@ def _quantities(question: str) -> list[Quantity]:
     found: list[Quantity] = []
     for match in _QUANTITY_RE.finditer(question):
         value = float(match.group(1))
-        prefix = match.group(2) or ""
-        raw_unit = match.group(3)
+        raw_unit = match.group(2)
         unit, multiplier = _canonical_unit(raw_unit)
-        if prefix and raw_unit.lower() in {"f", "v", "a", "c", "ω", "ohm", "ohms"}:
-            multiplier *= _PREFIXES.get(prefix, 1.0)
         found.append(Quantity(value * multiplier, unit))
     return found
 
 
 def _values(quantities: list[Quantity], unit: str) -> list[float]:
     return [quantity.value for quantity in quantities if quantity.unit == unit]
+
+
+def _gravity(question: str) -> float:
+    match = _GRAVITY_RE.search(question)
+    if match:
+        return float(match.group(1))
+    return 9.8
 
 
 def _format_number(value: float) -> str:
@@ -179,6 +221,13 @@ def solve_common_physics(question: str) -> dict | None:
     charges = _values(quantities, "C")
     distances = _values(quantities, "m")
     times = _values(quantities, "s")
+    masses = _values(quantities, "kg")
+    speeds = _values(quantities, "m/s")
+    accelerations = _values(quantities, "m/s^2")
+    inductances = _values(quantities, "H")
+    frequencies = _values(quantities, "Hz")
+    energies = _values(quantities, "J")
+    forces = _values(quantities, "N")
     complex_context = _has_any(
         text,
         (
@@ -198,6 +247,12 @@ def solve_common_physics(question: str) -> dict | None:
             " impedance",
             " resonance",
             " alternating",
+            "incline",
+            "pulley",
+            "friction",
+            "collision",
+            "spring",
+            "projectile",
         ),
     )
 
@@ -215,6 +270,145 @@ def solve_common_physics(question: str) -> dict | None:
             formula="v = d / t",
             substitutions=f"d={distance:g} m and t={duration:g} s",
         )
+
+    if (
+        _has_any(
+            text,
+            (
+                "gravitational potential energy",
+                "potential energy",
+                "stored gravitational energy",
+            ),
+        )
+        and len(masses) == 1
+        and len(distances) == 1
+        and not complex_context
+    ):
+        mass, height = masses[0], distances[0]
+        gravity = _gravity(question)
+        return _result(
+            answer=mass * gravity * height,
+            unit="J",
+            formula="E_p = m * g * h",
+            substitutions=f"m={mass:g} kg, g={gravity:g} m/s^2, h={height:g} m",
+        )
+
+    if (
+        _has_any(text, ("kinetic energy", "calculate the ke", "find the ke"))
+        and len(masses) == 1
+        and len(speeds) == 1
+        and not complex_context
+    ):
+        mass, speed = masses[0], speeds[0]
+        return _result(
+            answer=0.5 * mass * speed**2,
+            unit="J",
+            formula="E_k = 0.5 * m * v^2",
+            substitutions=f"m={mass:g} kg and v={speed:g} m/s",
+        )
+
+    magnetic_energy = "magnetic" in text and "energy" in text and "inductor" in text
+    if magnetic_energy and len(inductances) == 1 and len(currents) == 1 and not energies:
+        inductance, current = inductances[0], currents[0]
+        energy = 0.5 * inductance * current**2
+        if re.search(r"(?:energy\s*\(mJ\)|unit\s*:\s*mJ)", question, re.I):
+            return _result(answer=energy * 1e3, unit="mJ", formula="W = 0.5 * L * I^2", substitutions=f"L={inductance:g} H and I={current:g} A")
+        return _result(answer=energy, unit="J", formula="W = 0.5 * L * I^2", substitutions=f"L={inductance:g} H and I={current:g} A")
+
+    if magnetic_energy and len(energies) == 1 and len(inductances) == 1 and not currents:
+        energy, inductance = energies[0], inductances[0]
+        return _result(answer=math.sqrt(2 * energy / inductance), unit="A", formula="I = sqrt(2W / L)", substitutions=f"W={energy:g} J and L={inductance:g} H")
+
+    if magnetic_energy and len(energies) == 1 and len(currents) == 1 and not inductances:
+        energy, current = energies[0], currents[0]
+        inductance = 2 * energy / current**2
+        requested_mh = bool(re.search(r"inductance\s*\(mH\)|unit\s*:\s*mH", question, re.I))
+        return _result(answer=inductance * (1e3 if requested_mh else 1), unit="mH" if requested_mh else "H", formula="L = 2W / I^2", substitutions=f"W={energy:g} J and I={current:g} A")
+
+    if len(inductances) == 1 and len(capacitances) == 1:
+        inductance, capacitance = inductances[0], capacitances[0]
+        if "angular frequency" in text:
+            return _result(answer=1 / math.sqrt(inductance * capacitance), unit="rad/s", formula="omega = 1 / sqrt(L*C)", substitutions=f"L={inductance:g} H and C={capacitance:g} F")
+        if _has_any(text, ("resonant frequency", "resonance frequency", "natural oscillation frequency")):
+            return _result(answer=1 / (2 * math.pi * math.sqrt(inductance * capacitance)), unit="Hz", formula="f = 1 / (2*pi*sqrt(L*C))", substitutions=f"L={inductance:g} H and C={capacitance:g} F")
+
+    if len(frequencies) == 1 and len(inductances) == 1 and "inductive reactance" in text:
+        frequency, inductance = frequencies[0], inductances[0]
+        return _result(answer=2 * math.pi * frequency * inductance, unit="ohm", formula="X_L = 2*pi*f*L", substitutions=f"f={frequency:g} Hz and L={inductance:g} H")
+
+    if len(frequencies) == 1 and len(capacitances) == 1 and "capacitive reactance" in text:
+        frequency, capacitance = frequencies[0], capacitances[0]
+        return _result(answer=1 / (2 * math.pi * frequency * capacitance), unit="ohm", formula="X_C = 1 / (2*pi*f*C)", substitutions=f"f={frequency:g} Hz and C={capacitance:g} F")
+
+    if (
+        len(frequencies) == 1
+        and len(inductances) == 1
+        and len(capacitances) == 1
+        and len(resistances) == 1
+        and _has_any(text, ("total impedance", "calculate the impedance", "find the impedance"))
+    ):
+        frequency, inductance = frequencies[0], inductances[0]
+        capacitance, resistance = capacitances[0], resistances[0]
+        x_l = 2 * math.pi * frequency * inductance
+        x_c = 1 / (2 * math.pi * frequency * capacitance)
+        return _result(answer=math.sqrt(resistance**2 + (x_l - x_c)**2), unit="ohm", formula="Z = sqrt(R^2 + (X_L-X_C)^2)", substitutions=f"R={resistance:g} ohm, X_L={x_l:g} ohm, X_C={x_c:g} ohm")
+
+    if (
+        _has_any(
+            text,
+            (
+                "calculate the momentum",
+                "find the momentum",
+                "what is the momentum",
+                "linear momentum",
+            ),
+        )
+        and len(masses) == 1
+        and len(speeds) == 1
+        and not complex_context
+    ):
+        mass, speed = masses[0], speeds[0]
+        return _result(
+            answer=mass * speed,
+            unit="kg*m/s",
+            formula="p = m * v",
+            substitutions=f"m={mass:g} kg and v={speed:g} m/s",
+        )
+
+    if (
+        _has_any(text, ("calculate the force", "find the force", "what is the force"))
+        and len(masses) == 1
+        and len(accelerations) == 1
+        and not complex_context
+    ):
+        mass, acceleration = masses[0], accelerations[0]
+        return _result(
+            answer=mass * acceleration,
+            unit="N",
+            formula="F = m * a",
+            substitutions=f"m={mass:g} kg and a={acceleration:g} m/s^2",
+        )
+
+    if "resultant force" in text and forces:
+        force_values = forces[:2]
+        if len(force_values) == 1 and "each" in text:
+            force_values.append(force_values[0])
+        if len(force_values) == 2:
+            first, second = force_values
+            angle_match = _ANGLE_RE.search(question)
+            if "same direction" in text:
+                resultant, formula = first + second, "F = F1 + F2"
+            elif _has_any(text, ("opposite directions", "opposite direction")):
+                resultant, formula = abs(first - second), "F = |F1 - F2|"
+            else:
+                angle = 90.0 if "perpendicular" in text else (float(angle_match.group(1)) if angle_match else None)
+                if angle is None:
+                    resultant = None
+                else:
+                    resultant = math.sqrt(first**2 + second**2 + 2 * first * second * math.cos(math.radians(angle)))
+                formula = "F = sqrt(F1^2 + F2^2 + 2*F1*F2*cos(theta))"
+            if resultant is not None:
+                return _result(answer=resultant, unit="N", formula=formula, substitutions=f"F1={first:g} N and F2={second:g} N")
 
     if (
         _has_any(

@@ -179,6 +179,82 @@ def test_solves_average_speed():
     assert result["unit"] == "m/s"
 
 
+def test_solves_gravitational_potential_energy():
+    result = solve_common_physics(
+        "Calculate the gravitational potential energy of a 5kg mass at a height of 10m. (g = 9.8)"
+    )
+
+    assert result is not None
+    assert result["answer"] == "490"
+    assert result["unit"] == "J"
+
+
+def test_solves_kinetic_energy():
+    result = solve_common_physics(
+        "Find the kinetic energy of a 2 kg object moving at 3 m/s."
+    )
+
+    assert result is not None
+    assert result["answer"] == "9"
+    assert result["unit"] == "J"
+
+
+def test_solves_newtons_second_law():
+    result = solve_common_physics(
+        "Calculate the force on a 4 kg cart accelerating at 2.5 m/s^2."
+    )
+
+    assert result is not None
+    assert result["answer"] == "10"
+    assert result["unit"] == "N"
+
+
+def test_solves_linear_momentum():
+    result = solve_common_physics(
+        "What is the momentum of a 0.5 kg ball moving at 12 m/s?"
+    )
+
+    assert result is not None
+    assert result["answer"] == "6"
+    assert result["unit"] == "kg*m/s"
+
+
+def test_solves_inductor_energy_in_requested_millijoules():
+    result = solve_common_physics(
+        "An inductor has L = 0.2 H and current 3 A. Calculate the magnetic field energy (mJ) stored in the inductor."
+    )
+    assert result is not None
+    assert result["answer"] == "900"
+    assert result["unit"] == "mJ"
+
+
+def test_solves_lc_resonant_frequency():
+    result = solve_common_physics(
+        "Calculate the natural oscillation frequency for an LC circuit with L = 2 mH and C = 50 uF."
+    )
+    assert result is not None
+    assert abs(float(result["answer"]) - 503.29) < 0.02
+    assert result["unit"] == "Hz"
+
+
+def test_solves_rlc_impedance():
+    result = solve_common_physics(
+        "An RLC circuit has R = 20 ohm, L = 0.5 H, C = 100 uF, and f = 50 Hz. Calculate the total impedance Z."
+    )
+    assert result is not None
+    assert abs(float(result["answer"]) - 126.84) < 0.02
+    assert result["unit"] == "ohm"
+
+
+def test_solves_resultant_force_at_angle():
+    result = solve_common_physics(
+        "Two electric forces, each with a magnitude of 5 N, act at an angle of 60°. What is the resultant force?"
+    )
+    assert result is not None
+    assert abs(float(result["answer"]) - 8.66) < 0.01
+    assert result["unit"] == "N"
+
+
 def test_retrieves_released_logic_example():
     import json
     from pathlib import Path
